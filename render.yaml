@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: interviewer-lens-backend
+    env: "python"
+    rootDir: backend
+    buildCommand: |
+      pip install -r requirements.txt
+      python manage.py collectstatic --noinput
+      python manage.py migrate
+    startCommand: gunicorn interviewerlens.wsgi --bind 0.0.0.0:$PORT
+    autoDeploy: true
+    envVars:
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_ALLOWED_HOSTS
+        # Render will set this host on first deploy; update to actual hostname after creation if needed
+        value: interviewer-lens-backend.onrender.com
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://your-frontend.vercel.app
+      - key: AUTH0_DOMAIN
+        value: YOUR-TENANT.region.auth0.com
+      - key: AUTH0_API_AUDIENCE
+        value: https://interviewer-lens.api
+      - key: AUTH0_ISSUER
+        value: https://YOUR-TENANT.region.auth0.com/
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: DAILY_RATELIMIT
+        value: 200
+      # Secrets: set in Render Dashboard (don’t commit)
+      - key: DJANGO_SECRET_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
