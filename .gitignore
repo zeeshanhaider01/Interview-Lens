@@ -1,0 +1,51 @@
+# ===========================
+# Global ignores
+# ===========================
+.DS_Store
+.vscode/
+.idea/
+*.log
+
+# ===========================
+# Backend (Django / Python)
+# ===========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+*.sqlite3
+db.sqlite3
+
+# Virtual environments
+backend/.venv/
+backend/env/
+backend/venv/
+
+# Django static/media
+backend/staticfiles/
+backend/media/
+
+# Environment files (keep example, ignore real secrets)
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# ===========================
+# Frontend (React / Vite / Node)
+# ===========================
+node_modules/
+dist/
+
+# Environment files (same rule as backend)
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# ===========================
+# OS / Editor junk
+# ===========================
+Thumbs.db
+*.swp
