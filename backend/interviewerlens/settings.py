@@ -93,7 +93,12 @@ REST_FRAMEWORK = {
 }
 
 from corsheaders.defaults import default_headers
-CORS_ALLOWED_ORIGINS = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+# CORS_ALLOWED_ORIGINS = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+CORS_ALLOWED_ORIGINS = [
+    "https://interview-lens-zeta.vercel.app",
+    "http://localhost:5173",
+]
+
 CORS_ALLOW_HEADERS = list(default_headers) + ["authorization"]
 
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "")
