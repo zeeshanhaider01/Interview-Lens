@@ -98,7 +98,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://interview-lens-zeta.vercel.app",
     "http://localhost:5173",
 ]
-
+print("##############CORS_ALLOWED_ORIGINS:", CORS_ALLOWED_ORIGINS)
 CORS_ALLOW_HEADERS = list(default_headers) + ["authorization"]
 
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "")
