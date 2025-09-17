@@ -35,11 +35,11 @@ def generate_questions(interviewee, interviewer):
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
     try:
-        resp = requests.post(url, headers=headers, json=body, timeout=120)
+        resp = requests.post(url, headers=headers, json=body, timeout=200)
         if resp.status_code == 404 and model.lower().startswith("gpt-5"):
             # Graceful fallback if GPT-5 isn’t enabled on the account
             body["model"] = "gpt-4o-mini"
-            resp = requests.post(url, headers=headers, json=body, timeout=30)
+            resp = requests.post(url, headers=headers, json=body, timeout=200)
 
         resp.raise_for_status()
         data = resp.json()
