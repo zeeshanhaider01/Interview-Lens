@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react'
 import { Form, Button, Row, Col, Spinner, Card } from 'react-bootstrap'
 import axios from 'axios'
@@ -27,17 +26,29 @@ export default function ProfileForm() {
     setError(null)
     setLoading(true)
     try {
-      const token = await getAccessTokenSilently()
-      const resp = await axios.post('/api/predict-questions/', form, {
-        headers: { Authorization: `Bearer ${token}` }
+      const token = await getAccessTokenSilently({
+        authorizationParams: {
+          audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+          scope: 'openid profile email'
+        }
       })
+
+      // Use the deployed backend base URL from Vercel envs
+      const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/+$/, '')
+      console.log('API base at runtime:', API_BASE)
+
+      const resp = await axios.post(
+        `${API_BASE}/api/predict-questions/`,
+        form,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
       setResult(resp.data)
     } catch (err) {
-  console.error("Axios error:", err);
-  console.log("Backend response data:", err?.response?.data);
-  console.log("Backend status code:", err?.response?.status);
-  setError(err?.response?.data?.detail || 'Something went wrong');
-} finally {
+      console.error('Axios error:', err)
+      console.log('Backend response data:', err?.response?.data)
+      console.log('Backend status code:', err?.response?.status)
+      setError(err?.response?.data?.detail || 'Something went wrong')
+    } finally {
       setLoading(false)
     }
   }
@@ -55,25 +66,46 @@ export default function ProfileForm() {
               <Col md={6}>
                 <Form.Group>
                   <Form.Label>Name</Form.Label>
-                  <Form.Control value={form.interviewee.name} onChange={(e)=>onChange(e,'interviewee','name')} required />
+                  <Form.Control
+                    value={form.interviewee.name}
+                    onChange={(e)=>onChange(e,'interviewee','name')}
+                    required
+                  />
                 </Form.Group>
               </Col>
               <Col md={6}>
                 <Form.Group>
                   <Form.Label>Email</Form.Label>
-                  <Form.Control type="email" value={form.interviewee.email} onChange={(e)=>onChange(e,'interviewee','email')} required />
+                  <Form.Control
+                    type="email"
+                    value={form.interviewee.email}
+                    onChange={(e)=>onChange(e,'interviewee','email')}
+                    required
+                  />
                 </Form.Group>
               </Col>
               <Col md={6}>
                 <Form.Group>
                   <Form.Label>Education</Form.Label>
-                  <Form.Control as="textarea" rows={3} value={form.interviewee.education} onChange={(e)=>onChange(e,'interviewee','education')} required />
+                  <Form.Control
+                    as="textarea"
+                    rows={3}
+                    value={form.interviewee.education}
+                    onChange={(e)=>onChange(e,'interviewee','education')}
+                    required
+                  />
                 </Form.Group>
               </Col>
               <Col md={6}>
                 <Form.Group>
                   <Form.Label>Professional Experience</Form.Label>
-                  <Form.Control as="textarea" rows={3} value={form.interviewee.experience} onChange={(e)=>onChange(e,'interviewee','experience')} required />
+                  <Form.Control
+                    as="textarea"
+                    rows={3}
+                    value={form.interviewee.experience}
+                    onChange={(e)=>onChange(e,'interviewee','experience')}
+                    required
+                  />
                 </Form.Group>
               </Col>
             </Row>
@@ -85,19 +117,35 @@ export default function ProfileForm() {
               <Col md={4}>
                 <Form.Group>
                   <Form.Label>Name</Form.Label>
-                  <Form.Control value={form.interviewer.name} onChange={(e)=>onChange(e,'interviewer','name')} required />
+                  <Form.Control
+                    value={form.interviewer.name}
+                    onChange={(e)=>onChange(e,'interviewer','name')}
+                    required
+                  />
                 </Form.Group>
               </Col>
               <Col md={4}>
                 <Form.Group>
                   <Form.Label>Educational Experience</Form.Label>
-                  <Form.Control as="textarea" rows={3} value={form.interviewer.education} onChange={(e)=>onChange(e,'interviewer','education')} required />
+                  <Form.Control
+                    as="textarea"
+                    rows={3}
+                    value={form.interviewer.education}
+                    onChange={(e)=>onChange(e,'interviewer','education')}
+                    required
+                  />
                 </Form.Group>
               </Col>
               <Col md={4}>
                 <Form.Group>
                   <Form.Label>Professional Experience</Form.Label>
-                  <Form.Control as="textarea" rows={3} value={form.interviewer.experience} onChange={(e)=>onChange(e,'interviewer','experience')} required />
+                  <Form.Control
+                    as="textarea"
+                    rows={3}
+                    value={form.interviewer.experience}
+                    onChange={(e)=>onChange(e,'interviewer','experience')}
+                    required
+                  />
                 </Form.Group>
               </Col>
             </Row>
