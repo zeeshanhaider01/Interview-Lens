@@ -16,7 +16,8 @@ export default function App() {
       clientId={clientId}
       authorizationParams={{
         redirect_uri: window.location.origin,
-        audience: audience
+        audience: audience,
+        scope: "openid profile email offline_access"
       }}
       cacheLocation="localstorage"
       useRefreshTokens={true}
