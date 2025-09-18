@@ -94,7 +94,6 @@ REST_FRAMEWORK = {
 
 from corsheaders.defaults import default_headers
 CORS_ALLOWED_ORIGINS = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
-print("##############CORS_ALLOWED_ORIGINS:", CORS_ALLOWED_ORIGINS)
 
 CORS_ALLOW_HEADERS = list(default_headers) + ["authorization"]
 
