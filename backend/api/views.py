@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status, permissions
 from .serializers import PredictRequestSerializer
 from .openai_client import generate_questions, OpenAIError
-from .models import InterviewPrediction
+from .models import InterviewPrediction, User
 from django.core.cache import cache
 from django.utils import timezone
 from django.conf import settings
@@ -12,13 +12,15 @@ from django.conf import settings
 import hashlib
 import json
 
-def compute_fingerprint(interviewee, interviewer, prompt_version="", regenerate_nonce=""):
+def compute_fingerprint(user_identifier, interviewee, interviewer, prompt_version="", regenerate_nonce=""):
     """
     Deterministic fingerprint of the request + prompt_version or regenerate_nonce.
     Changing prompt_version or regenerate_nonce will change the fingerprint and force a fresh run.
     """
     h = hashlib.sha256()
     # sort_keys=True ensures stable JSON ordering
+    h.update(str(user_identifier).encode("utf-8"))
+    h.update(b"||")
     h.update(json.dumps(interviewee, sort_keys=True).encode("utf-8"))
     h.update(b"||")
     h.update(json.dumps(interviewer, sort_keys=True).encode("utf-8"))
@@ -58,8 +60,8 @@ def predict_questions(request):
     prompt_version = s.validated_data.get("prompt_version", "") or ""
     regenerate_nonce = s.validated_data.get("regenerate_nonce", "") or ""
 
-    # Compute stable fingerprint
-    fingerprint = compute_fingerprint(interviewee, interviewer, prompt_version, regenerate_nonce)
+    # Compute stable fingerprint (user id isolates cache/DB rows per account)
+    fingerprint = compute_fingerprint(request.user.id, interviewee, interviewer, prompt_version, regenerate_nonce)
     lock_key = f"predict:lock:{fingerprint}"
     result_key = f"predict:result:{fingerprint}"
 
@@ -77,10 +79,17 @@ def predict_questions(request):
         except Exception as e:
             return Response({"status": "FAILED", "error": f"Server error: {e}"}, status=500)
 
+    # JWT auth exposes Auth0User; InterviewPrediction.user is api.User — resolve by auth0_sub.
+    payload = getattr(request.user, "payload", None) or {}
+    db_user, _ = User.objects.get_or_create(
+        auth0_sub=str(request.user.id),
+        defaults={"email": payload.get("email") or None},
+    )
+
     # ---------- CACHING & LOCKING PATH ----------
-    # 1) Check persistent DB first (authoritative)
+    # 1) Check persistent DB first (authoritative), scoped to current user
     try:
-        db_obj = InterviewPrediction.objects.get(fingerprint=fingerprint)
+        db_obj = InterviewPrediction.objects.get(fingerprint=fingerprint, user=db_user)
         if db_obj.status == InterviewPrediction.STATUS_COMPLETED and db_obj.result_json:
             try:
                 return Response(json.loads(db_obj.result_json), status=200)
@@ -91,7 +100,7 @@ def predict_questions(request):
         if db_obj.status == InterviewPrediction.STATUS_FAILED:
             # Try to supply a last-good fallback if available
             fallback = None
-            last_good = InterviewPrediction.objects.filter(status=InterviewPrediction.STATUS_COMPLETED).order_by("-last_success_at").first()
+            last_good = InterviewPrediction.objects.filter(user=db_user, status=InterviewPrediction.STATUS_COMPLETED).order_by("-last_success_at").first()
             if last_good and last_good.result_json:
                 try:
                     fallback = json.loads(last_good.result_json)
@@ -128,12 +137,14 @@ def predict_questions(request):
     try:
         db_obj = InterviewPrediction.objects.create(
             fingerprint=fingerprint,
+            user=db_user,
             prompt_version=prompt_version or None,
             regenerate_nonce=regenerate_nonce or None,
             status=InterviewPrediction.STATUS_RUNNING
         )
     except Exception:
-        # race when another process inserted the DB row - safe fallback
+        # DB write failed (e.g. race-created by another process); release lock and
+        # tell client to poll — it will succeed on the next attempt.
         cache.delete(lock_key)
         return Response({"status": "RUNNING", "fingerprint": fingerprint}, status=202)
 
@@ -163,8 +174,8 @@ def predict_questions(request):
         db_obj.save(update_fields=["status", "error_text", "updated_at"])
         cache.delete(lock_key)
 
-        # optional: return the last successful fallback if exists
-        last_good = InterviewPrediction.objects.filter(status=InterviewPrediction.STATUS_COMPLETED).order_by("-last_success_at").first()
+        # optional: return the last successful fallback if exists (same user)
+        last_good = InterviewPrediction.objects.filter(user=db_user, status=InterviewPrediction.STATUS_COMPLETED).order_by("-last_success_at").first()
         fallback = None
         if last_good and last_good.result_json:
             try:
