@@ -1,4 +1,3 @@
-
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -103,3 +102,22 @@ AUTH0_API_AUDIENCE = os.getenv("AUTH0_API_AUDIENCE", "")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+# ------- CACHING / REDIS CONFIGURATION -------
+
+# Feature flag: ENABLE_CACHING
+# Set this to False to immediately disable all caching and locking logic (safe rollback).
+ENABLE_CACHING = os.getenv("ENABLE_CACHING", "True").lower() in ("1", "true", "yes")
+
+# Redis-backed cache configuration (used for locks and fast-result caching)
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"),
+        "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
+    }
+}
+
+# Tuneable TTLs (seconds)
+CACHE_TTL_RUNNING = int(os.getenv("CACHE_TTL_RUNNING", "300"))   # lock TTL (default 5m)
+CACHE_TTL_RESULT = int(os.getenv("CACHE_TTL_RESULT", "86400"))  # result cache (default 24h)
