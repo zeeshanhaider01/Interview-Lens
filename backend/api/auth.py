@@ -73,8 +73,10 @@ class Auth0JWTAuthentication(authentication.BaseAuthentication):
             payload = jwt.decode(
                 token,
                 rsa_key,
+                # specifying the algorithm is essential otherwise decode will use algorithm whatever mentioned in the token header which may allow hackers to use other algorithms.
                 algorithms=["RS256"],
                 audience=audience,
+                # we are explicitly specifying the issuer
                 issuer=issuer,
             )
         except Exception:
