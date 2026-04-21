@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Interview Lens Collector",
+  "version": "0.1.0",
+  "description": "Collect LinkedIn profile sections for Interview Lens prep sessions.",
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "Interview Lens Collector"
+  },
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+  "permissions": ["storage", "activeTab", "scripting", "identity"],
+  "host_permissions": [
+    "https://*.linkedin.com/*",
+    "http://localhost:8000/*",
+    "https://*.interviewerlens.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://*.linkedin.com/*"],
+      "js": ["src/content/linkedin-scraper.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "interviewlens-collector@example.com",
+      "strict_min_version": "109.0"
+    }
+  }
+}
