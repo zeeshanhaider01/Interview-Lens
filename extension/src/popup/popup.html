@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Interview Lens Collector</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main class="app">
+      <h1>Interview Lens Collector</h1>
+
+      <section>
+        <h2>Settings</h2>
+        <label for="apiBaseUrl">Backend API URL</label>
+        <input id="apiBaseUrl" type="url" placeholder="http://localhost:8000/api" />
+
+        <label for="dashboardUrl">Interview Lens Dashboard URL</label>
+        <input id="dashboardUrl" type="url" placeholder="http://localhost:5173" />
+
+        <label for="auth0Domain">Auth0 Domain</label>
+        <input id="auth0Domain" type="text" placeholder="your-tenant.us.auth0.com" />
+
+        <label for="auth0ClientId">Auth0 Client ID</label>
+        <input id="auth0ClientId" type="text" placeholder="xxxxxxxxxx" />
+
+        <label for="auth0Audience">Auth0 API Audience</label>
+        <input id="auth0Audience" type="text" placeholder="https://api.interviewlens" />
+
+        <label class="checkboxLabel" for="clearPrepIdOnLogout">
+          <input id="clearPrepIdOnLogout" type="checkbox" />
+          Clear active prep_id on logout (shared machine mode)
+        </label>
+
+        <button id="saveSettingsButton" type="button">Save Settings</button>
+      </section>
+
+      <section>
+        <h2>Authentication</h2>
+        <div class="row">
+          <button id="loginButton" type="button">Login</button>
+          <button id="logoutButton" type="button">Logout</button>
+        </div>
+        <p id="authStatus">Auth status: unknown</p>
+      </section>
+
+      <section>
+        <h2>Prep Session</h2>
+        <label for="prepIdInput">Preparation ID (prep_id)</label>
+        <div class="row">
+          <input id="prepIdInput" type="text" placeholder="Paste prep_id from Interview Lens" />
+          <button id="clearPrepSessionButton" type="button">Clear</button>
+        </div>
+        <p id="activePrepBadge" class="prepBadge hidden">
+          Active prep_id: <span id="activePrepBadgeValue"></span>
+        </p>
+        <div class="row">
+          <button id="createPrepSessionButton" type="button">Create New prep_id</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Capture LinkedIn Profile</h2>
+        <label for="roleSelect">Profile Role</label>
+        <select id="roleSelect">
+          <option value="INTERVIEWEE">Interviewee</option>
+          <option value="INTERVIEWER">Interviewer</option>
+        </select>
+        <div id="intervieweeDecisionSection" class="hidden mt8">
+          <p id="intervieweeDecisionHint" class="hintText">
+            Choose whether to reuse your saved interviewee profile or upload a new one.
+          </p>
+          <label class="radioLabel">
+            <input id="intervieweeChoiceReuse" name="intervieweeProfileChoice" type="radio" value="reuse_saved" checked />
+            Use saved interviewee profile
+          </label>
+          <label class="radioLabel">
+            <input id="intervieweeChoiceUpload" name="intervieweeProfileChoice" type="radio" value="upload_new" />
+            Upload new interviewee profile
+          </label>
+          <div id="intervieweeUploadScopeSection" class="hidden">
+            <label class="radioLabel">
+              <input id="uploadScopeSessionOnly" name="intervieweeUploadScope" type="radio" value="session_only" checked />
+              Use only for this session
+            </label>
+            <label class="radioLabel">
+              <input id="uploadScopeDefault" name="intervieweeUploadScope" type="radio" value="save_as_default" />
+              Save as default profile
+            </label>
+          </div>
+        </div>
+        <button id="captureButton" type="button">Capture Current LinkedIn Page</button>
+      </section>
+
+      <section>
+        <h2>Review & Edit</h2>
+        <label for="experienceField">Experience</label>
+        <textarea id="experienceField" rows="4"></textarea>
+        <label for="educationField">Education</label>
+        <textarea id="educationField" rows="3"></textarea>
+        <label for="certificationsField">Certifications</label>
+        <textarea id="certificationsField" rows="3"></textarea>
+        <label for="projectsField">Projects</label>
+        <textarea id="projectsField" rows="3"></textarea>
+        <label for="skillsField">Skills</label>
+        <textarea id="skillsField" rows="3"></textarea>
+        <label for="honorsAwardsField">Honors & Awards</label>
+        <textarea id="honorsAwardsField" rows="3"></textarea>
+      </section>
+
+      <section>
+        <button id="submitButton" type="button">Send to Interview Lens</button>
+      </section>
+
+      <section id="dashboardCtaSection" class="hidden">
+        <button id="openDashboardButton" type="button">Open Interview Lens Dashboard</button>
+      </section>
+
+      <p id="statusMessage"></p>
+    </main>
+    <script type="module" src="./popup.js"></script>
+  </body>
+</html>
