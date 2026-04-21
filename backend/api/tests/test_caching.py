@@ -4,6 +4,7 @@ from django.urls import reverse
 from rest_framework.test import APITestCase
 from api.models import InterviewPrediction, User
 from api.auth import Auth0User
+from api.tasks import run_prediction_task
 from unittest import mock
 import json
 
@@ -19,7 +20,7 @@ TEST_CACHE = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCa
 # --- unittest.mock.patch (quick reference) ------------------------------------
 # mock.patch(...) is a *function* in the standard library module unittest.mock.
 # Used as @mock.patch("dotted.path.to.name"), it temporarily replaces the object
-# at that import path (e.g. api.views.generate_questions) with a fake
+# at that import path (e.g. api.prediction_service.generate_questions) with a fake
 # for the duration of the test, so we never call the real OpenAI / LLM / network.
 #
 # Main argument: the string target — where to patch (patch "where it is used").
@@ -60,7 +61,7 @@ class PredictEndpointTests(APITestCase):
         payload = {"sub": "test|predict-endpoint", "email": "a@x.com"}
         self.client.force_authenticate(user=Auth0User(payload))
 
-    @mock.patch("api.views.generate_questions")
+    @mock.patch("api.prediction_service.generate_questions")
     def test_endpoint_with_caching_disabled_calls_openai_directly(self, mock_generate):
         # Force feature flag OFF to ensure no caching/lock used
         mock_resp = {"html": "<article>QA</article>"}
@@ -78,7 +79,7 @@ class PredictEndpointTests(APITestCase):
             self.assertEqual(response.json(), mock_resp)
             mock_generate.assert_called_once()
 
-    @mock.patch("api.views.generate_questions")
+    @mock.patch("api.prediction_service.generate_questions")
     def test_endpoint_with_caching_enabled_uses_db_and_cache(self, mock_generate):
         mock_resp = {"html": "<article>Cached</article>"}
         mock_generate.return_value = mock_resp
@@ -88,14 +89,76 @@ class PredictEndpointTests(APITestCase):
         }
         url = reverse("predict_questions")
 
-        # First call: should trigger OpenAI call and store in DB/cache
-        response1 = self.client.post(url, data=json.dumps(payload), content_type="application/json")
-        self.assertEqual(response1.status_code, 200)
-        self.assertEqual(response1.json(), mock_resp)
+        with mock.patch("api.views.run_prediction_task.delay") as mock_delay:
+            response1 = self.client.post(url, data=json.dumps(payload), content_type="application/json")
+        self.assertEqual(response1.status_code, 202)
+        self.assertEqual(response1.json()["status"], InterviewPrediction.STATUS_RUNNING)
+        self.assertEqual(mock_delay.call_count, 1)
+        self.assertEqual(mock_generate.call_count, 0)
+
+        db_user = User.objects.get(auth0_sub="test|predict-endpoint")
+        run_prediction_task.run(
+            user_identifier="test|predict-endpoint",
+            db_user_id=db_user.id,
+            interviewee=payload["interviewee"],
+            interviewer=payload["interviewer"],
+        )
         self.assertEqual(mock_generate.call_count, 1)
 
-        # Second call: should return from cache/DB without calling OpenAI again
         response2 = self.client.post(url, data=json.dumps(payload), content_type="application/json")
         self.assertEqual(response2.status_code, 200)
-        # OpenAI should not be called again
+        self.assertEqual(response2.json(), mock_resp)
         self.assertEqual(mock_generate.call_count, 1)
+
+    @mock.patch("api.prediction_service.generate_questions")
+    def test_task_marks_prediction_completed(self, mock_generate):
+        mock_generate.return_value = {"html": "<article>Task result</article>"}
+        user = User.objects.create(auth0_sub="test|task", email="task@example.com")
+        InterviewPrediction.objects.create(
+            fingerprint="task-fingerprint",
+            user=user,
+            status=InterviewPrediction.STATUS_RUNNING,
+        )
+        payload = {
+            "interviewee": {"name": "Alice", "email": "task@example.com", "education": "CS", "experience": "2y"},
+            "interviewer": {"name": "Bob", "education": "SE", "experience": "5y"},
+        }
+
+        with mock.patch("api.prediction_service.compute_fingerprint", return_value="task-fingerprint"):
+            task_result = run_prediction_task.run(
+                user_identifier="test|task",
+                db_user_id=user.id,
+                interviewee=payload["interviewee"],
+                interviewer=payload["interviewer"],
+            )
+
+        db_obj = InterviewPrediction.objects.get(fingerprint="task-fingerprint", user=user)
+        self.assertEqual(task_result["response_status"], 200)
+        self.assertEqual(db_obj.status, InterviewPrediction.STATUS_COMPLETED)
+        self.assertEqual(json.loads(db_obj.result_json), {"html": "<article>Task result</article>"})
+
+    def test_endpoint_returns_running_when_prediction_already_in_progress(self):
+        user = User.objects.create(auth0_sub="test|predict-endpoint", email="a@x.com")
+        InterviewPrediction.objects.create(
+            fingerprint="already-running",
+            user=user,
+            status=InterviewPrediction.STATUS_RUNNING,
+        )
+        payload = {
+            "interviewee": {"name": "Alice", "email": "a@x.com", "education": "CS", "experience": "2y"},
+            "interviewer": {"name": "Bob", "education": "SE", "experience": "5y"},
+        }
+
+        with mock.patch(
+            "api.prediction_service.compute_fingerprint",
+            return_value="already-running",
+        ):
+            response = self.client.post(
+                reverse("predict_questions"),
+                data=json.dumps(payload),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.json()["status"], InterviewPrediction.STATUS_RUNNING)
+        self.assertEqual(response.json()["fingerprint"], "already-running")
