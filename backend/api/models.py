@@ -1,4 +1,5 @@
 from django.db import models
+import uuid
 
 
 class User(models.Model):
@@ -55,3 +56,94 @@ class InterviewPrediction(models.Model):
 
     def __str__(self):
         return f"{self.fingerprint} ({self.status})"
+
+
+class PrepSession(models.Model):
+    """
+    Represents one interview-preparation session for a user.
+    The `prep_id` is shared with clients (frontend/extension).
+    """
+
+    STATUS_ACTIVE = "ACTIVE"
+    STATUS_CLOSED = "CLOSED"
+
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, "Active"),
+        (STATUS_CLOSED, "Closed"),
+    ]
+
+    prep_id = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="prep_sessions")
+    title = models.CharField(max_length=200, blank=True, null=True)
+    company_name = models.CharField(max_length=200, blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.prep_id} ({self.status})"
+
+
+class PrepProfileSubmission(models.Model):
+    """
+    Stores one profile snapshot submitted by the extension for a prep session.
+    """
+
+    ROLE_INTERVIEWEE = "INTERVIEWEE"
+    ROLE_INTERVIEWER = "INTERVIEWER"
+    ROLE_CHOICES = [
+        (ROLE_INTERVIEWEE, "Interviewee"),
+        (ROLE_INTERVIEWER, "Interviewer"),
+    ]
+
+    SOURCE_LINKEDIN = "LINKEDIN"
+    SOURCE_CHOICES = [
+        (SOURCE_LINKEDIN, "LinkedIn"),
+    ]
+
+    prep_session = models.ForeignKey(PrepSession, on_delete=models.CASCADE, related_name="profile_submissions")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="profile_submissions")
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default=SOURCE_LINKEDIN)
+    source_url = models.URLField(max_length=500, blank=True, null=True)
+    extracted_sections = models.JSONField(default=dict)
+    normalized_text = models.TextField(blank=True, default="")
+    confidence_flags = models.JSONField(default=dict)
+    metadata = models.JSONField(default=dict)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-submitted_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["prep_session", "role"],
+                name="unique_prep_session_role_submission",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.prep_session.prep_id}::{self.role}"
+
+
+class IntervieweeBaselineProfile(models.Model):
+    """
+    Stores the user's default interviewee profile for reuse across prep sessions.
+    """
+
+    SOURCE_LINKEDIN = "LINKEDIN"
+    SOURCE_CHOICES = [
+        (SOURCE_LINKEDIN, "LinkedIn"),
+    ]
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="interviewee_baseline_profile")
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default=SOURCE_LINKEDIN)
+    source_url = models.URLField(max_length=500, blank=True, null=True)
+    extracted_sections = models.JSONField(default=dict)
+    normalized_text = models.TextField(blank=True, default="")
+    confidence_flags = models.JSONField(default=dict)
+    metadata = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.auth0_sub}::interviewee-baseline"

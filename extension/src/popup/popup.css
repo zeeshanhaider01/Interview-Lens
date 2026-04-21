@@ -1,0 +1,131 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #0f172a;
+  color: #f8fafc;
+  font-family: Arial, sans-serif;
+}
+
+.app {
+  width: 420px;
+  padding: 12px;
+}
+
+h1 {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+
+h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+section {
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+label {
+  display: block;
+  font-size: 12px;
+  margin: 8px 0 4px;
+}
+
+input,
+select,
+textarea,
+button {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid #475569;
+  padding: 8px;
+  background: #1e293b;
+  color: #f8fafc;
+}
+
+textarea {
+  resize: vertical;
+}
+
+button {
+  background: #0f766e;
+  border-color: #0f766e;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button:hover {
+  background: #0d9488;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+}
+
+.row > button {
+  flex: 1;
+}
+
+.row > input {
+  flex: 1;
+}
+
+#clearPrepSessionButton {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 88px;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.radioLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.checkboxLabel > input[type="checkbox"] {
+  width: auto;
+}
+
+.radioLabel > input[type="radio"] {
+  width: auto;
+}
+
+.hintText {
+  margin: 4px 0 8px;
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.mt8 {
+  margin-top: 8px;
+}
+
+.prepBadge {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #a7f3d0;
+}
+
+#statusMessage {
+  margin: 0;
+  font-size: 12px;
+  min-height: 20px;
+}
+
+.hidden {
+  display: none;
+}

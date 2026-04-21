@@ -99,9 +99,20 @@ CORS_ALLOW_HEADERS = list(default_headers) + ["authorization"]
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "")
 AUTH0_ISSUER = os.getenv("AUTH0_ISSUER", "")
 AUTH0_API_AUDIENCE = os.getenv("AUTH0_API_AUDIENCE", "")
+FRONTEND_DASHBOARD_URL = os.getenv("FRONTEND_DASHBOARD_URL", "http://localhost:5173")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+AI_PROVIDER = os.getenv("AI_PROVIDER", "")
+AI_API_KEY = os.getenv("AI_API_KEY", "")
+AI_MODEL = os.getenv("AI_MODEL", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+AI_DEFAULT_PROVIDER = os.getenv("AI_DEFAULT_PROVIDER", "anthropic")
+AI_SELECTION_STRATEGY = os.getenv("AI_SELECTION_STRATEGY", "auto")
+AI_PROVIDER_PRIORITY = os.getenv("AI_PROVIDER_PRIORITY", "anthropic,openai")
+AI_COST_SCORE_ANTHROPIC = float(os.getenv("AI_COST_SCORE_ANTHROPIC", "1.0"))
+AI_COST_SCORE_OPENAI = float(os.getenv("AI_COST_SCORE_OPENAI", "1.2"))
 
 # ------- CACHING / REDIS CONFIGURATION -------
 
@@ -121,3 +132,9 @@ CACHES = {
 # Tuneable TTLs (seconds)
 CACHE_TTL_RUNNING = int(os.getenv("CACHE_TTL_RUNNING", "300"))   # lock TTL (default 5m)
 CACHE_TTL_RESULT = int(os.getenv("CACHE_TTL_RESULT", "86400"))  # result cache (default 24h)
+
+# ------- CELERY CONFIGURATION -------
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"))
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
+CELERY_TASK_ALWAYS_EAGER = getenv_bool("CELERY_TASK_ALWAYS_EAGER", "False")
+CELERY_TASK_EAGER_PROPAGATES = getenv_bool("CELERY_TASK_EAGER_PROPAGATES", "True")

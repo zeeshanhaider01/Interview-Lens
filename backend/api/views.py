@@ -2,55 +2,205 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status, permissions
-from .serializers import PredictRequestSerializer
-from .openai_client import generate_questions, OpenAIError
-from .models import InterviewPrediction, User
-from django.core.cache import cache
-from django.utils import timezone
 from django.conf import settings
+from django.utils import timezone
+from urllib.parse import urlencode
+from .serializers import (
+    IntervieweeBaselineProfileSerializer,
+    PredictRequestSerializer,
+    PrepProfileSubmissionSerializer,
+    PrepSessionCreateSerializer,
+    PrepSessionUpdateSerializer,
+)
+from .models import IntervieweeBaselineProfile, PrepProfileSubmission, PrepSession, User
+from .prediction_service import (
+    get_prediction_state,
+    mark_prediction_enqueue_failed,
+    reserve_prediction_job,
+    run_prediction_pipeline,
+)
+from .tasks import run_prediction_task
 
-import hashlib
-import json
 
-def compute_fingerprint(user_identifier, interviewee, interviewer, prompt_version="", regenerate_nonce=""):
-    """
-    Deterministic fingerprint of the request + prompt_version or regenerate_nonce.
-    Changing prompt_version or regenerate_nonce will change the fingerprint and force a fresh run.
-    """
-    h = hashlib.sha256()
-    # sort_keys=True ensures stable JSON ordering
-    h.update(str(user_identifier).encode("utf-8"))
-    h.update(b"||")
-    h.update(json.dumps(interviewee, sort_keys=True).encode("utf-8"))
-    h.update(b"||")
-    h.update(json.dumps(interviewer, sort_keys=True).encode("utf-8"))
-    if prompt_version:
-        h.update(b"||v:")
-        h.update(str(prompt_version).encode("utf-8"))
-    if regenerate_nonce:
-        h.update(b"||r:")
-        h.update(str(regenerate_nonce).encode("utf-8"))
-    return h.hexdigest()
+def get_or_create_db_user(auth_user):
+    payload = getattr(auth_user, "payload", None) or {}
+    db_user, _ = User.objects.get_or_create(
+        auth0_sub=str(auth_user.id),
+        defaults={"email": payload.get("email") or None},
+    )
+    return db_user
+
+
+def normalize_sections_to_text(extracted_sections):
+    normalized_chunks = []
+    for section_name, value in extracted_sections.items():
+        if isinstance(value, list):
+            values = [str(item).strip() for item in value if str(item).strip()]
+            section_text = "\n".join(values)
+        elif isinstance(value, str):
+            section_text = value.strip()
+        else:
+            section_text = str(value).strip()
+
+        if section_text:
+            normalized_chunks.append(f"{section_name.upper()}:\n{section_text}")
+
+    return "\n\n".join(normalized_chunks)
+
+
+def stringify_section(value):
+    if isinstance(value, list):
+        return "\n".join(str(item).strip() for item in value if str(item).strip())
+    if isinstance(value, str):
+        return value.strip()
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def build_predict_payload_from_prep_session(prep_session, user_email=None):
+    profile_state = resolve_session_profile_state(prep_session, prep_session.user)
+    if profile_state["pipeline_status"] != "READY_FOR_TOPIC_GENERATION":
+        raise ValueError("Both required profiles are not available for prediction.")
+    return build_predict_payload_from_profile_state(profile_state, user_email=user_email)
+
+
+def build_prediction_response(payload, response_status):
+    if response_status == status.HTTP_200_OK:
+        return {
+            "status": "COMPLETED",
+            "result": payload,
+        }
+
+    response_body = {"status": payload.get("status", "UNKNOWN")}
+    for key in ("fingerprint", "error", "last_good_fallback"):
+        if key in payload:
+            response_body[key] = payload[key]
+    return response_body
+
+
+def start_prediction_job(db_user, user_identifier, interviewee, interviewer, prompt_version="", regenerate_nonce=""):
+    payload, response_status, fingerprint, should_enqueue = reserve_prediction_job(
+        user_identifier=user_identifier,
+        db_user=db_user,
+        interviewee=interviewee,
+        interviewer=interviewer,
+        prompt_version=prompt_version,
+        regenerate_nonce=regenerate_nonce,
+    )
+    if should_enqueue:
+        try:
+            run_prediction_task.delay(
+                user_identifier=user_identifier,
+                db_user_id=db_user.id,
+                interviewee=interviewee,
+                interviewer=interviewer,
+                prompt_version=prompt_version,
+                regenerate_nonce=regenerate_nonce,
+            )
+        except Exception as exc:
+            mark_prediction_enqueue_failed(
+                db_user,
+                fingerprint,
+                f"Queue error: {exc}",
+            )
+            return {"status": "FAILED", "error": f"Queue error: {exc}"}, status.HTTP_500_INTERNAL_SERVER_ERROR
+    return payload, response_status
+
+
+def build_dashboard_url(prep_session):
+    base_url = (getattr(settings, "FRONTEND_DASHBOARD_URL", "") or "").rstrip("/")
+    if not base_url:
+        return ""
+    query = urlencode({"prep_id": str(prep_session.prep_id)})
+    return f"{base_url}/?{query}"
+
+
+def build_submit_profile_user_message(pipeline_status, prediction):
+    if pipeline_status == "WAITING_FOR_COUNTERPART_PROFILE":
+        return (
+            "Profile saved successfully. Add the counterpart profile to start generating your interview prep."
+        )
+
+    prediction_status = (prediction or {}).get("status")
+    if prediction_status == "COMPLETED":
+        return "Your interview prep is ready. Open the Interview Lens Dashboard to review it."
+
+    if prediction_status == "FAILED":
+        return (
+            "We could not generate prep right now. Open the Interview Lens Dashboard for details and retry options."
+        )
+
+    return (
+        "Great! We received both profiles and started generating your interview prep. "
+        "Open the Interview Lens Dashboard to see progress and results."
+    )
+
+
+def build_submit_profile_next_action(pipeline_status):
+    if pipeline_status == "WAITING_FOR_COUNTERPART_PROFILE":
+        return "SUBMIT_COUNTERPART_PROFILE"
+    return "OPEN_DASHBOARD"
+
+
+def resolve_session_profile_state(prep_session, db_user):
+    session_submissions = {
+        submission.role: submission for submission in prep_session.profile_submissions.all()
+    }
+    session_interviewee_submission = session_submissions.get(PrepProfileSubmission.ROLE_INTERVIEWEE)
+    interviewer_submission = session_submissions.get(PrepProfileSubmission.ROLE_INTERVIEWER)
+    baseline_interviewee_profile = IntervieweeBaselineProfile.objects.filter(user=db_user).first()
+
+    interviewee_source = "MISSING"
+    if session_interviewee_submission:
+        interviewee_source = "SESSION"
+    elif baseline_interviewee_profile:
+        interviewee_source = "DEFAULT"
+
+    has_interviewee = interviewee_source != "MISSING"
+    has_interviewer = interviewer_submission is not None
+    pipeline_status = (
+        "READY_FOR_TOPIC_GENERATION"
+        if has_interviewee and has_interviewer
+        else "WAITING_FOR_COUNTERPART_PROFILE"
+    )
+
+    return {
+        "session_interviewee_submission": session_interviewee_submission,
+        "baseline_interviewee_profile": baseline_interviewee_profile,
+        "interviewer_submission": interviewer_submission,
+        "has_interviewee_profile": has_interviewee,
+        "has_interviewer_profile": has_interviewer,
+        "has_default_interviewee_profile": baseline_interviewee_profile is not None,
+        "interviewee_source": interviewee_source,
+        "pipeline_status": pipeline_status,
+    }
+
+
+def build_predict_payload_from_profile_state(profile_state, user_email=None):
+    interviewee_sections = {}
+    if profile_state["interviewee_source"] == "SESSION":
+        interviewee_sections = profile_state["session_interviewee_submission"].extracted_sections
+    elif profile_state["interviewee_source"] == "DEFAULT":
+        interviewee_sections = profile_state["baseline_interviewee_profile"].extracted_sections
+
+    interviewer_sections = profile_state["interviewer_submission"].extracted_sections
+    interviewee = {
+        "name": "Interviewee",
+        "email": user_email or "unknown@example.com",
+        "education": stringify_section(interviewee_sections.get("education")) or "Not provided",
+        "experience": normalize_sections_to_text(interviewee_sections) or "Not provided",
+    }
+    interviewer = {
+        "name": "Interviewer",
+        "education": stringify_section(interviewer_sections.get("education")) or "Not provided",
+        "experience": normalize_sections_to_text(interviewer_sections) or "Not provided",
+    }
+    return interviewee, interviewer
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def predict_questions(request):
-    """
-    Main endpoint to compute or fetch cached interview question results.
-
-    Feature flag:
-      - settings.ENABLE_CACHING (bool)
-        If False: caching & locking logic is skipped; the view simply calls OpenAI and returns the result.
-        This is useful in production for quick rollback: set ENABLE_CACHING=False to disable the caching system.
-
-    Locking:
-      - A Redis-backed lock is used via Django cache.add(lock_key, "1", timeout=LOCK_TTL)
-      - cache.add is atomic in Redis; this prevents duplicate OpenAI calls.
-
-    State:
-      - Results are stored in DB (InterviewPrediction) for durable storage.
-      - Results are also cached in Redis for fast reads.
-    """
     s = PredictRequestSerializer(data=request.data)
     if not s.is_valid():
         return Response({"detail": s.errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -59,139 +209,396 @@ def predict_questions(request):
     interviewer = s.validated_data["interviewer"]
     prompt_version = s.validated_data.get("prompt_version", "") or ""
     regenerate_nonce = s.validated_data.get("regenerate_nonce", "") or ""
+    db_user = get_or_create_db_user(request.user)
+    if getattr(settings, "ENABLE_CACHING", True):
+        payload, response_status = start_prediction_job(
+            db_user,
+            request.user.id,
+            interviewee,
+            interviewer,
+            prompt_version,
+            regenerate_nonce,
+        )
+    else:
+        payload, response_status = run_prediction_pipeline(
+            user_identifier=request.user.id,
+            db_user=db_user,
+            interviewee=interviewee,
+            interviewer=interviewer,
+            prompt_version=prompt_version,
+            regenerate_nonce=regenerate_nonce,
+        )
+    return Response(payload, status=response_status)
 
-    # Compute stable fingerprint (user id isolates cache/DB rows per account)
-    fingerprint = compute_fingerprint(request.user.id, interviewee, interviewer, prompt_version, regenerate_nonce)
-    lock_key = f"predict:lock:{fingerprint}"
-    result_key = f"predict:result:{fingerprint}"
 
-    # TTLs (configured in settings; fallback to sensible defaults)
-    LOCK_TTL = getattr(settings, "CACHE_TTL_RUNNING", 300)  # seconds
-    RESULT_TTL = getattr(settings, "CACHE_TTL_RESULT", 86400)  # seconds
+def compute_prep_session_row(prep_session, db_user, user_identifier, *, is_latest=False):
+    """
+    One row for GET /prep-sessions/ — includes human-oriented row_status for the dashboard list.
+    """
+    profile_state = resolve_session_profile_state(prep_session, db_user)
+    pipeline_status = profile_state["pipeline_status"]
 
-    # If feature flag disabled, skip caching/locks entirely (simple fallback)
-    if not getattr(settings, "ENABLE_CACHING", True):
-        try:
-            result = generate_questions(interviewee, interviewer)
-            return Response(result, status=200)
-        except OpenAIError as e:
-            return Response({"status": "FAILED", "error": str(e)}, status=502)
-        except Exception as e:
-            return Response({"status": "FAILED", "error": f"Server error: {e}"}, status=500)
+    row = {
+        "prep_id": str(prep_session.prep_id),
+        "title": prep_session.title,
+        "company_name": prep_session.company_name,
+        "created_at": prep_session.created_at.isoformat(),
+        "pipeline_status": pipeline_status,
+        "interviewee_source": profile_state["interviewee_source"],
+        "has_interviewee_profile": profile_state["has_interviewee_profile"],
+        "has_interviewer_profile": profile_state["has_interviewer_profile"],
+        "is_latest": is_latest,
+    }
 
-    # JWT auth exposes Auth0User; InterviewPrediction.user is api.User — resolve by auth0_sub.
-    payload = getattr(request.user, "payload", None) or {}
-    db_user, _ = User.objects.get_or_create(
-        auth0_sub=str(request.user.id),
-        defaults={"email": payload.get("email") or None},
+    if pipeline_status != "READY_FOR_TOPIC_GENERATION":
+        row["row_status"] = "waiting_for_profiles"
+        return row
+
+    interviewee, interviewer = build_predict_payload_from_profile_state(
+        profile_state,
+        user_email=db_user.email,
+    )
+    payload, response_status, fingerprint = get_prediction_state(
+        user_identifier=user_identifier,
+        db_user=db_user,
+        interviewee=interviewee,
+        interviewer=interviewer,
+    )
+    prediction = (
+        build_prediction_response(payload, response_status)
+        if payload is not None
+        else {"status": "NOT_STARTED", "fingerprint": fingerprint}
+    )
+    row["prediction_status"] = prediction.get("status")
+    pred_status = prediction.get("status")
+    if pred_status == "COMPLETED":
+        row["row_status"] = "ready"
+    elif pred_status == "FAILED":
+        row["row_status"] = "failed"
+    else:
+        row["row_status"] = "generating"
+
+    return row
+
+
+def list_prep_sessions(request):
+    db_user = get_or_create_db_user(request.user)
+    sessions = PrepSession.objects.filter(user=db_user).order_by("-created_at")
+    results = []
+    for idx, prep_session in enumerate(sessions):
+        results.append(
+            compute_prep_session_row(
+                prep_session,
+                db_user,
+                request.user.id,
+                is_latest=(idx == 0),
+            )
+        )
+    return Response({"results": results})
+
+
+def get_owned_prep_session(db_user, prep_id):
+    try:
+        return PrepSession.objects.get(prep_id=prep_id, user=db_user)
+    except PrepSession.DoesNotExist:
+        return None
+
+
+def build_prep_session_detail(prep_session, db_user, user_identifier):
+    profile_state = resolve_session_profile_state(prep_session, db_user)
+    pipeline_status = profile_state["pipeline_status"]
+
+    if pipeline_status == "READY_FOR_TOPIC_GENERATION":
+        interviewee, interviewer = build_predict_payload_from_profile_state(
+            profile_state,
+            user_email=db_user.email,
+        )
+        payload, response_status, fingerprint = get_prediction_state(
+            user_identifier=user_identifier,
+            db_user=db_user,
+            interviewee=interviewee,
+            interviewer=interviewer,
+        )
+        prediction = (
+            build_prediction_response(payload, response_status)
+            if payload is not None
+            else {"status": "NOT_STARTED", "fingerprint": fingerprint}
+        )
+    else:
+        prediction = {"status": "NOT_READY"}
+
+    return {
+        "prep_id": str(prep_session.prep_id),
+        "status": prep_session.status,
+        "title": prep_session.title,
+        "company_name": prep_session.company_name,
+        "created_at": prep_session.created_at.isoformat(),
+        "updated_at": prep_session.updated_at.isoformat(),
+        "pipeline_status": pipeline_status,
+        "has_interviewee_profile": profile_state["has_interviewee_profile"],
+        "has_interviewer_profile": profile_state["has_interviewer_profile"],
+        "has_default_interviewee_profile": profile_state["has_default_interviewee_profile"],
+        "interviewee_source": profile_state["interviewee_source"],
+        "prediction": prediction,
+    }
+
+
+@api_view(["GET", "POST"])
+@permission_classes([permissions.IsAuthenticated])
+def prep_sessions(request):
+    if request.method == "GET":
+        return list_prep_sessions(request)
+
+    serializer = PrepSessionCreateSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"detail": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    db_user = get_or_create_db_user(request.user)
+    prep_session = PrepSession.objects.create(
+        user=db_user,
+        title=serializer.validated_data.get("title") or None,
+        company_name=serializer.validated_data.get("company_name") or None,
+    )
+    return Response(
+        {
+            "prep_id": str(prep_session.prep_id),
+            "status": prep_session.status,
+            "title": prep_session.title,
+            "company_name": prep_session.company_name,
+            "created_at": prep_session.created_at.isoformat(),
+        },
+        status=status.HTTP_201_CREATED,
     )
 
-    # ---------- CACHING & LOCKING PATH ----------
-    # 1) Check persistent DB first (authoritative), scoped to current user
-    try:
-        db_obj = InterviewPrediction.objects.get(fingerprint=fingerprint, user=db_user)
-        if db_obj.status == InterviewPrediction.STATUS_COMPLETED and db_obj.result_json:
-            try:
-                return Response(json.loads(db_obj.result_json), status=200)
-            except Exception:
-                # corrupted stored JSON -> fall through to attempt regeneration
-                pass
 
-        if db_obj.status == InterviewPrediction.STATUS_FAILED:
-            # Try to supply a last-good fallback if available
-            fallback = None
-            last_good = InterviewPrediction.objects.filter(user=db_user, status=InterviewPrediction.STATUS_COMPLETED).order_by("-last_success_at").first()
-            if last_good and last_good.result_json:
-                try:
-                    fallback = json.loads(last_good.result_json)
-                except Exception:
-                    fallback = None
-            return Response({
-                "status": "FAILED",
-                "error": db_obj.error_text or "Upstream error",
-                "last_good_fallback": fallback
-            }, status=502)
+@api_view(["GET", "PATCH", "DELETE"])
+@permission_classes([permissions.IsAuthenticated])
+def prep_session_detail(request, prep_id):
+    db_user = get_or_create_db_user(request.user)
+    prep_session = get_owned_prep_session(db_user, prep_id)
+    if prep_session is None:
+        return Response({"detail": "Prep session not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        if db_obj.status == InterviewPrediction.STATUS_RUNNING:
-            # Another worker is already generating this fingerprint
-            return Response({"status": "RUNNING", "fingerprint": fingerprint}, status=202)
-    except InterviewPrediction.DoesNotExist:
-        db_obj = None
+    if request.method == "GET":
+        return Response(build_prep_session_detail(prep_session, db_user, request.user.id))
 
-    # 2) Fast path: read from Redis cache
-    cached = cache.get(result_key)
-    if cached:
-        try:
-            return Response(json.loads(cached), status=200)
-        except Exception:
-            # If cached value corrupted, delete and continue
-            cache.delete(result_key)
+    if request.method == "PATCH":
+        serializer = PrepSessionUpdateSerializer(data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response({"detail": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+        if not serializer.validated_data:
+            return Response(
+                {"detail": "At least one of title, company_name, or status must be provided."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-    # 3) Attempt to acquire RUNNING lock (atomic)
-    got_lock = cache.add(lock_key, "1", timeout=LOCK_TTL)
-    if not got_lock:
-        # Another process holds the lock; tell client to poll
-        return Response({"status": "RUNNING", "fingerprint": fingerprint}, status=202)
+        updated_fields = []
+        if "title" in serializer.validated_data:
+            prep_session.title = serializer.validated_data["title"] or None
+            updated_fields.append("title")
+        if "company_name" in serializer.validated_data:
+            prep_session.company_name = serializer.validated_data["company_name"] or None
+            updated_fields.append("company_name")
+        if "status" in serializer.validated_data:
+            prep_session.status = serializer.validated_data["status"]
+            updated_fields.append("status")
 
-    # 4) Create DB record with RUNNING status
-    try:
-        db_obj = InterviewPrediction.objects.create(
-            fingerprint=fingerprint,
-            user=db_user,
-            prompt_version=prompt_version or None,
-            regenerate_nonce=regenerate_nonce or None,
-            status=InterviewPrediction.STATUS_RUNNING
+        if updated_fields:
+            prep_session.save(update_fields=[*updated_fields, "updated_at"])
+
+        return Response(build_prep_session_detail(prep_session, db_user, request.user.id))
+
+    if prep_session.status != PrepSession.STATUS_CLOSED:
+        prep_session.status = PrepSession.STATUS_CLOSED
+        prep_session.save(update_fields=["status", "updated_at"])
+
+    return Response(
+        {
+            "prep_id": str(prep_session.prep_id),
+            "status": prep_session.status,
+            "archived": True,
+        }
+    )
+
+
+@api_view(["GET", "PUT"])
+@permission_classes([permissions.IsAuthenticated])
+def interviewee_baseline_profile(request):
+    db_user = get_or_create_db_user(request.user)
+    existing_profile = IntervieweeBaselineProfile.objects.filter(user=db_user).first()
+
+    if request.method == "GET":
+        if existing_profile is None:
+            return Response({"exists": False, "profile": None})
+        return Response(
+            {
+                "exists": True,
+                "profile": {
+                    "source": existing_profile.source,
+                    "source_url": existing_profile.source_url,
+                    "extracted_sections": existing_profile.extracted_sections,
+                    "confidence_flags": existing_profile.confidence_flags,
+                    "metadata": existing_profile.metadata,
+                    "created_at": existing_profile.created_at.isoformat(),
+                    "updated_at": existing_profile.updated_at.isoformat(),
+                },
+            }
         )
-    except Exception:
-        # DB write failed (e.g. race-created by another process); release lock and
-        # tell client to poll — it will succeed on the next attempt.
-        cache.delete(lock_key)
-        return Response({"status": "RUNNING", "fingerprint": fingerprint}, status=202)
 
-    # 5) Call OpenAI
+    serializer = IntervieweeBaselineProfileSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"detail": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    extracted_sections = serializer.validated_data["extracted_sections"]
+    normalized_text = normalize_sections_to_text(extracted_sections)
+    profile, _ = IntervieweeBaselineProfile.objects.update_or_create(
+        user=db_user,
+        defaults={
+            "source": serializer.validated_data.get("source", "LINKEDIN"),
+            "source_url": serializer.validated_data.get("source_url") or None,
+            "extracted_sections": extracted_sections,
+            "normalized_text": normalized_text,
+            "confidence_flags": serializer.validated_data.get("confidence_flags", {}),
+            "metadata": serializer.validated_data.get("metadata", {}),
+        },
+    )
+    return Response(
+        {
+            "exists": True,
+            "profile": {
+                "source": profile.source,
+                "source_url": profile.source_url,
+                "extracted_sections": profile.extracted_sections,
+                "confidence_flags": profile.confidence_flags,
+                "metadata": profile.metadata,
+                "created_at": profile.created_at.isoformat(),
+                "updated_at": profile.updated_at.isoformat(),
+            },
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def submit_prep_profile(request, prep_id):
+    serializer = PrepProfileSubmissionSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"detail": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    db_user = get_or_create_db_user(request.user)
     try:
-        result = generate_questions(interviewee, interviewer)
-        # Persist result to DB
-        db_obj.result_json = json.dumps(result)
-        db_obj.status = InterviewPrediction.STATUS_COMPLETED
-        db_obj.error_text = ""
-        db_obj.last_success_at = timezone.now()
-        db_obj.save(update_fields=["result_json", "status", "error_text", "last_success_at", "updated_at"])
+        prep_session = PrepSession.objects.get(prep_id=prep_id, user=db_user, status=PrepSession.STATUS_ACTIVE)
+    except PrepSession.DoesNotExist:
+        return Response({"detail": "Prep session not found or not active."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Cache for fast future access (best-effort)
-        try:
-            cache.set(result_key, json.dumps(result), timeout=RESULT_TTL)
-        except Exception:
-            # if caching fails, still return the result (do not crash)
-            pass
+    extracted_sections = serializer.validated_data["extracted_sections"]
+    normalized_text = normalize_sections_to_text(extracted_sections)
 
-        cache.delete(lock_key)  # release lock
-        return Response(result, status=200)
+    submission, created = PrepProfileSubmission.objects.update_or_create(
+        prep_session=prep_session,
+        role=serializer.validated_data["role"],
+        defaults={
+            "user": db_user,
+            "source": serializer.validated_data.get("source", "LINKEDIN"),
+            "source_url": serializer.validated_data.get("source_url") or None,
+            "extracted_sections": extracted_sections,
+            "normalized_text": normalized_text,
+            "confidence_flags": serializer.validated_data.get("confidence_flags", {}),
+            "metadata": serializer.validated_data.get("metadata", {}),
+            "submitted_at": timezone.now(),
+        },
+    )
 
-    except OpenAIError as e:
-        db_obj.status = InterviewPrediction.STATUS_FAILED
-        db_obj.error_text = str(e)
-        db_obj.save(update_fields=["status", "error_text", "updated_at"])
-        cache.delete(lock_key)
+    profile_state = resolve_session_profile_state(prep_session, db_user)
+    pipeline_status = profile_state["pipeline_status"]
 
-        # optional: return the last successful fallback if exists (same user)
-        last_good = InterviewPrediction.objects.filter(user=db_user, status=InterviewPrediction.STATUS_COMPLETED).order_by("-last_success_at").first()
-        fallback = None
-        if last_good and last_good.result_json:
-            try:
-                fallback = json.loads(last_good.result_json)
-            except Exception:
-                fallback = None
+    prediction = None
+    if pipeline_status == "READY_FOR_TOPIC_GENERATION":
+        interviewee, interviewer = build_predict_payload_from_profile_state(
+            profile_state,
+            user_email=db_user.email,
+        )
+        if getattr(settings, "ENABLE_CACHING", True):
+            prediction_payload, prediction_status = start_prediction_job(
+                db_user,
+                request.user.id,
+                interviewee,
+                interviewer,
+            )
+        else:
+            prediction_payload, prediction_status = run_prediction_pipeline(
+                user_identifier=request.user.id,
+                db_user=db_user,
+                interviewee=interviewee,
+                interviewer=interviewer,
+            )
+        prediction = build_prediction_response(prediction_payload, prediction_status)
 
-        return Response({
-            "status": "FAILED",
-            "error": str(e),
-            "last_good_fallback": fallback
-        }, status=502)
+    return Response(
+        {
+            "submission_id": submission.id,
+            "prep_id": str(prep_session.prep_id),
+            "role": submission.role,
+            "pipeline_status": pipeline_status,
+            "interviewee_source": profile_state["interviewee_source"],
+            "prediction": prediction,
+            "user_message": build_submit_profile_user_message(pipeline_status, prediction),
+            "next_action": build_submit_profile_next_action(pipeline_status),
+            "dashboard_url": build_dashboard_url(prep_session),
+            "submitted_at": submission.submitted_at.isoformat(),
+        },
+        status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+    )
 
-    except Exception as e:
-        db_obj.status = InterviewPrediction.STATUS_FAILED
-        db_obj.error_text = f"Server error: {e}"
-        db_obj.save(update_fields=["status", "error_text", "updated_at"])
-        cache.delete(lock_key)
-        return Response({"status": "FAILED", "error": f"Server error: {e}"}, status=500)
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def get_prep_prediction(request, prep_id):
+    db_user = get_or_create_db_user(request.user)
+    try:
+        prep_session = PrepSession.objects.get(prep_id=prep_id, user=db_user)
+    except PrepSession.DoesNotExist:
+        return Response({"detail": "Prep session not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    profile_state = resolve_session_profile_state(prep_session, db_user)
+    pipeline_status = profile_state["pipeline_status"]
+
+    if pipeline_status != "READY_FOR_TOPIC_GENERATION":
+        return Response(
+            {
+                "prep_id": str(prep_session.prep_id),
+                "pipeline_status": pipeline_status,
+                "has_interviewee_profile": profile_state["has_interviewee_profile"],
+                "has_interviewer_profile": profile_state["has_interviewer_profile"],
+                "interviewee_source": profile_state["interviewee_source"],
+                "prediction": {"status": "NOT_READY"},
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    interviewee, interviewer = build_predict_payload_from_profile_state(
+        profile_state,
+        user_email=db_user.email,
+    )
+    payload, response_status, fingerprint = get_prediction_state(
+        user_identifier=request.user.id,
+        db_user=db_user,
+        interviewee=interviewee,
+        interviewer=interviewer,
+    )
+    prediction = (
+        build_prediction_response(payload, response_status)
+        if payload is not None
+        else {"status": "NOT_STARTED", "fingerprint": fingerprint}
+    )
+    return Response(
+        {
+            "prep_id": str(prep_session.prep_id),
+            "pipeline_status": pipeline_status,
+            "has_interviewee_profile": profile_state["has_interviewee_profile"],
+            "has_interviewer_profile": profile_state["has_interviewer_profile"],
+            "interviewee_source": profile_state["interviewee_source"],
+            "prediction": prediction,
+        },
+        status=response_status or status.HTTP_200_OK,
+    )
