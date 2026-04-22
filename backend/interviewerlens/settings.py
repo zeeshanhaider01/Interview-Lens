@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -63,6 +64,22 @@ DATABASES = {
         "NAME": BASE_DIR / "db.sqlite3",
     }
 }
+
+database_url = (os.getenv("DATABASE_URL") or "").strip()
+if database_url:
+    parsed = urlparse(database_url)
+    if parsed.scheme in ("postgres", "postgresql"):
+        DATABASES["default"] = {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": parsed.path.lstrip("/"),
+            "USER": parsed.username or "",
+            "PASSWORD": parsed.password or "",
+            "HOST": parsed.hostname or "",
+            "PORT": str(parsed.port or ""),
+        }
+        ssl_mode = parse_qs(parsed.query).get("sslmode", [""])[0]
+        if ssl_mode:
+            DATABASES["default"]["OPTIONS"] = {"sslmode": ssl_mode}
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
