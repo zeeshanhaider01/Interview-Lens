@@ -117,8 +117,8 @@ services:
   - type: redis
     name: interviewer-lens-redis
     ipAllowList: []
-    plan: starter
+    plan: free
 
 databases:
   - name: interviewer-lens-postgres
-    plan: starter
+    plan: free
