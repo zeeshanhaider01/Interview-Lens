@@ -69,7 +69,7 @@ services:
     env: "python"
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: celery -A interviewerlens worker --loglevel=info --pool=solo --concurrency=1
+    startCommand: celery -A interviewerlens worker --pool=solo --concurrency=1 --without-gossip --without-mingle --without-heartbeat --prefetch-multiplier=1 --loglevel=info
     autoDeploy: true
     envVars:
       - key: PYTHON_VERSION
