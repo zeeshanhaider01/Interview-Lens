@@ -2,40 +2,89 @@
   box-sizing: border-box;
 }
 
+:root {
+  --bg-page: #f8f9fa;
+  --surface: #ffffff;
+  --surface-muted: #f8f9fa;
+  --text-primary: #212529;
+  --text-muted: #6c757d;
+  --border-color: #dee2e6;
+  --brand-primary: #0d6efd;
+  --brand-primary-hover: #0b5ed7;
+  --brand-success: #198754;
+  --brand-danger: #dc3545;
+  --shadow-soft: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  --font-family-base: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-md: 14px;
+  --font-size-lg: 18px;
+  --line-height-body: 1.45;
+  --line-height-heading: 1.3;
+  --line-height-control: 1.2;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+}
+
 body {
   margin: 0;
-  background: #0f172a;
-  color: #f8fafc;
-  font-family: Arial, sans-serif;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
 }
 
 .app {
   width: 420px;
-  padding: 12px;
+  padding: 12px 12px 10px;
+}
+
+.brandHeader {
+  margin: 0 0 10px;
+}
+
+.brandSubheading {
+  margin: 4px 0 0;
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
+  color: var(--text-muted);
 }
 
 h1 {
-  margin: 0 0 10px;
-  font-size: 18px;
+  margin: 0;
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-bold);
+  color: var(--brand-primary);
 }
 
 h2 {
   margin: 0 0 8px;
-  font-size: 14px;
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+  color: var(--brand-primary);
 }
 
 section {
-  border: 1px solid #334155;
-  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--surface);
+  border-radius: 10px;
   padding: 10px;
   margin-bottom: 10px;
+  box-shadow: var(--shadow-soft);
 }
 
 .guidanceList {
   margin: 0 0 10px 18px;
   padding: 0;
-  font-size: 12px;
-  color: #cbd5e1;
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
+  color: var(--text-muted);
 }
 
 .guidanceList li {
@@ -44,8 +93,11 @@ section {
 
 label {
   display: block;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
   margin: 8px 0 4px;
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
 }
 
 input,
@@ -54,10 +106,14 @@ textarea,
 button {
   width: 100%;
   border-radius: 6px;
-  border: 1px solid #475569;
+  border: 1px solid var(--border-color);
   padding: 8px;
-  background: #1e293b;
-  color: #f8fafc;
+  background: var(--surface);
+  color: var(--text-primary);
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-control);
+  font-weight: var(--font-weight-regular);
 }
 
 textarea {
@@ -65,14 +121,61 @@ textarea {
 }
 
 button {
-  background: #0f766e;
-  border-color: #0f766e;
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #fff;
   cursor: pointer;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 button:hover {
-  background: #0d9488;
+  background: var(--brand-primary-hover);
+}
+
+button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.btnPrimary {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #fff;
+}
+
+.btnPrimary:hover {
+  background: var(--brand-primary-hover);
+  border-color: var(--brand-primary-hover);
+}
+
+.btnOutline {
+  background: var(--surface-muted);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.btnOutline:hover {
+  background: #e9ecef;
+}
+
+.btnDangerOutline {
+  background: #fff5f5;
+  border-color: #f1aeb5;
+  color: var(--brand-danger);
+}
+
+.btnDangerOutline:hover {
+  background: #ffe3e6;
+  border-color: #ea868f;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid rgba(13, 110, 253, 0.35);
+  outline-offset: 1px;
 }
 
 .row {
@@ -117,8 +220,9 @@ button:hover {
 
 .hintText {
   margin: 4px 0 8px;
-  font-size: 12px;
-  color: #cbd5e1;
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
+  color: var(--text-muted);
 }
 
 .mt8 {
@@ -127,8 +231,10 @@ button:hover {
 
 .prepBadge {
   margin: 8px 0 0;
-  font-size: 12px;
-  color: #a7f3d0;
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
+  color: var(--brand-success);
+  font-weight: var(--font-weight-semibold);
 }
 
 .authProgress {
@@ -136,15 +242,16 @@ button:hover {
   align-items: center;
   gap: 8px;
   margin-top: 8px;
-  font-size: 12px;
-  color: #cbd5e1;
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
+  color: var(--text-muted);
 }
 
 .spinner {
   width: 14px;
   height: 14px;
-  border: 2px solid #334155;
-  border-top-color: #2dd4bf;
+  border: 2px solid #dbe3ea;
+  border-top-color: var(--brand-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -157,8 +264,10 @@ button:hover {
 
 #statusMessage {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
   min-height: 20px;
+  color: var(--text-muted);
 }
 
 .hidden {

@@ -8,7 +8,10 @@
   </head>
   <body>
     <main class="app">
-      <h1>Interview Lens Collector</h1>
+      <header class="brandHeader">
+        <h1>Interview Lens Collector</h1>
+        <p class="brandSubheading">Capture LinkedIn profiles for prep sessions</p>
+      </header>
 
       <section id="loggedOutGuidanceSection">
         <h2>Guidance</h2>
@@ -17,14 +20,14 @@
           <li>Click Login and complete secure authentication.</li>
           <li>After login, capture and submit your LinkedIn profile data.</li>
         </ol>
-        <button id="openSignupButton" type="button">Sign Up on Interview Lens</button>
+        <button id="openSignupButton" type="button" class="btnPrimary">Sign Up on Interview Lens</button>
       </section>
 
       <section>
         <h2>Authentication</h2>
         <div class="row">
-          <button id="loginButton" type="button">Login</button>
-          <button id="logoutButton" type="button">Logout</button>
+          <button id="loginButton" type="button" class="btnPrimary">Login</button>
+          <button id="logoutButton" type="button" class="btnDangerOutline">Logout</button>
         </div>
         <div id="authProgress" class="authProgress hidden" aria-live="polite">
           <span class="spinner" aria-hidden="true"></span>
@@ -38,13 +41,13 @@
         <label for="prepIdInput">Preparation ID (prep_id)</label>
         <div class="row">
           <input id="prepIdInput" type="text" placeholder="Paste prep_id from Interview Lens" />
-          <button id="clearPrepSessionButton" type="button">Clear</button>
+          <button id="clearPrepSessionButton" type="button" class="btnOutline">Clear</button>
         </div>
         <p id="activePrepBadge" class="prepBadge hidden">
           Active prep_id: <span id="activePrepBadgeValue"></span>
         </p>
         <div class="row">
-          <button id="createPrepSessionButton" type="button">Create New prep_id</button>
+          <button id="createPrepSessionButton" type="button" class="btnPrimary">Create New prep_id</button>
         </div>
       </section>
 
@@ -78,7 +81,7 @@
             </label>
           </div>
         </div>
-        <button id="captureButton" type="button">Capture Current LinkedIn Page</button>
+        <button id="captureButton" type="button" class="btnPrimary">Capture Current LinkedIn Page</button>
       </section>
 
       <section id="reviewEditSection">
@@ -98,11 +101,11 @@
       </section>
 
       <section id="submitSection">
-        <button id="submitButton" type="button">Send to Interview Lens</button>
+        <button id="submitButton" type="button" class="btnPrimary">Send to Interview Lens</button>
       </section>
 
       <section id="dashboardCtaSection" class="hidden">
-        <button id="openDashboardButton" type="button">Open Interview Lens Dashboard</button>
+        <button id="openDashboardButton" type="button" class="btnOutline">Open Interview Lens Dashboard</button>
       </section>
 
       <p id="statusMessage"></p>
