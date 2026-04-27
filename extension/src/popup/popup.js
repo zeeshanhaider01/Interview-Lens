@@ -6,6 +6,8 @@ import { normalizeCapture } from "../lib/normalizer.js";
 const ui = {
   loginButton: document.getElementById("loginButton"),
   logoutButton: document.getElementById("logoutButton"),
+  authProgress: document.getElementById("authProgress"),
+  authProgressLabel: document.getElementById("authProgressLabel"),
   authStatus: document.getElementById("authStatus"),
   prepIdInput: document.getElementById("prepIdInput"),
   clearPrepSessionButton: document.getElementById("clearPrepSessionButton"),
@@ -40,6 +42,7 @@ let isAuthenticated = false;
 let hasDefaultIntervieweeProfile = false;
 let popupDraftSaveQueue = Promise.resolve();
 let currentSettings = {};
+let isAuthFlowPending = false;
 const POPUP_LOCAL_DRAFT_KEY = "popup_draft_local_backup";
 
 const INTERVIEWEE_PROFILE_CHOICES = {
@@ -126,6 +129,19 @@ function setStatus(message, isError = false) {
   ui.statusMessage.style.color = isError ? "#fca5a5" : "#a7f3d0";
 }
 
+function setAuthProgress(isVisible, label = "Authenticating...") {
+  ui.authProgress.classList.toggle("hidden", !isVisible);
+  ui.authProgressLabel.textContent = label;
+}
+
+function applyActionAvailability() {
+  ui.loginButton.disabled = isAuthFlowPending || isAuthenticated;
+  ui.logoutButton.disabled = isAuthFlowPending || !isAuthenticated;
+  ui.createPrepSessionButton.disabled = isAuthFlowPending || !isAuthenticated;
+  ui.submitButton.disabled = isAuthFlowPending || !isAuthenticated;
+  ui.captureButton.disabled = isAuthFlowPending;
+}
+
 function readErrorMessage(error, fallbackMessage = "Something went wrong.") {
   return error?.message || fallbackMessage;
 }
@@ -146,10 +162,7 @@ function setAuthUiState(authState) {
   ui.authStatus.textContent = isAuthenticated
     ? "Auth status: authenticated"
     : "Auth status: not authenticated";
-  ui.loginButton.disabled = isAuthenticated;
-  ui.logoutButton.disabled = !isAuthenticated;
-  ui.createPrepSessionButton.disabled = !isAuthenticated;
-  ui.submitButton.disabled = !isAuthenticated;
+  applyActionAvailability();
 }
 
 function getIntervieweeChoice() {
@@ -337,14 +350,25 @@ async function getCurrentLinkedInTab() {
 }
 
 ui.loginButton.addEventListener("click", async () => {
+  if (isAuthFlowPending) {
+    return;
+  }
+  isAuthFlowPending = true;
+  applyActionAvailability();
+  setAuthProgress(true, "Opening secure login...");
   try {
     setStatus("Opening login window...");
     const authState = await withRuntimeMessage({ type: "AUTH_LOGIN" });
     setAuthUiState(authState);
+    setAuthProgress(true, "Fetching latest data...");
     await refreshIntervieweeDecisionState();
     setStatus("Authentication successful.");
   } catch (error) {
     setStatus(readErrorMessage(error, "Authentication failed."), true);
+  } finally {
+    isAuthFlowPending = false;
+    setAuthProgress(false);
+    applyActionAvailability();
   }
 });
 
