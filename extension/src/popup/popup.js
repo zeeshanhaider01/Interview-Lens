@@ -97,6 +97,14 @@ function writeLocalPopupDraft(draft) {
   }
 }
 
+function clearLocalPopupDraft() {
+  try {
+    globalThis.localStorage?.removeItem(POPUP_LOCAL_DRAFT_KEY);
+  } catch (_error) {
+    // Ignore storage removal failures.
+  }
+}
+
 async function persistPopupDraft() {
   const draft = buildPopupDraft();
   // Synchronous backup to survive very fast popup-close events.
@@ -116,6 +124,10 @@ async function persistPopupDraft() {
 function setStatus(message, isError = false) {
   ui.statusMessage.textContent = message;
   ui.statusMessage.style.color = isError ? "#fca5a5" : "#a7f3d0";
+}
+
+function readErrorMessage(error, fallbackMessage = "Something went wrong.") {
+  return error?.message || fallbackMessage;
 }
 
 function setDashboardCtaUrl(url) {
@@ -202,6 +214,19 @@ function writeSections(sections = {}) {
   }
 }
 
+function resetPopupFormAfterLogout() {
+  ui.prepIdInput.value = "";
+  setDashboardCtaUrl("");
+  setActivePrepBadge("");
+  ui.roleSelect.value = PROFILE_ROLES.INTERVIEWEE;
+  ui.intervieweeChoiceReuse.checked = true;
+  ui.intervieweeChoiceUpload.checked = false;
+  ui.uploadScopeSessionOnly.checked = true;
+  ui.uploadScopeDefault.checked = false;
+  writeSections({});
+  clearLocalPopupDraft();
+}
+
 async function withRuntimeMessage(message) {
   const response = await runtimeSendMessage(message);
   if (!response?.ok) {
@@ -247,11 +272,18 @@ async function loadInitialState() {
   const localDraft = readLocalPopupDraft();
   const settings = await getSettings();
   currentSettings = { ...settings };
-  const draftState = await storageGet(STORAGE_KEYS.POPUP_DRAFT);
+  const draftState = await storageGet([
+    STORAGE_KEYS.POPUP_DRAFT,
+    STORAGE_KEYS.LAST_AUTH_RESULT,
+  ]);
   const draft = mergePopupDraftRecords(
     localDraft,
     draftState[STORAGE_KEYS.POPUP_DRAFT] ?? null
   );
+  const lastAuthResult = draftState[STORAGE_KEYS.LAST_AUTH_RESULT] ?? null;
+  if (lastAuthResult?.message) {
+    setStatus(lastAuthResult.message, lastAuthResult.status === "error");
+  }
 
   const authState = await withRuntimeMessage({ type: "AUTH_STATE" });
   setAuthUiState(authState);
@@ -306,12 +338,13 @@ async function getCurrentLinkedInTab() {
 
 ui.loginButton.addEventListener("click", async () => {
   try {
+    setStatus("Opening login window...");
     const authState = await withRuntimeMessage({ type: "AUTH_LOGIN" });
     setAuthUiState(authState);
     await refreshIntervieweeDecisionState();
     setStatus("Authentication successful.");
   } catch (error) {
-    setStatus(error.message, true);
+    setStatus(readErrorMessage(error, "Authentication failed."), true);
   }
 });
 
@@ -320,19 +353,11 @@ ui.logoutButton.addEventListener("click", async () => {
     await withRuntimeMessage({ type: "AUTH_LOGOUT" });
     setAuthUiState(null);
     hasDefaultIntervieweeProfile = false;
+    resetPopupFormAfterLogout();
     updateIntervieweeDecisionUi();
-    if (currentSettings.clearPrepIdOnLogout) {
-      ui.prepIdInput.value = "";
-      setDashboardCtaUrl("");
-      setActivePrepBadge("");
-      await persistPopupDraft();
-      setStatus("Logged out. Active prep_id cleared.");
-      return;
-    }
-    await persistPopupDraft();
-    setStatus("Logged out. Login required before creating/submitting.");
+    setStatus("Logged out. Cleared active session and captured profile data.");
   } catch (error) {
-    setStatus(error.message, true);
+    setStatus(readErrorMessage(error), true);
   }
 });
 
@@ -349,7 +374,7 @@ ui.createPrepSessionButton.addEventListener("click", async () => {
     await refreshIntervieweeDecisionState();
     setStatus("New prep session created.");
   } catch (error) {
-    setStatus(error.message, true);
+    setStatus(readErrorMessage(error), true);
   }
 });
 
@@ -361,7 +386,7 @@ ui.prepIdInput.addEventListener("change", async () => {
     await persistPopupDraft();
     await refreshIntervieweeDecisionState();
   } catch (error) {
-    setStatus(error.message, true);
+    setStatus(readErrorMessage(error), true);
   }
 });
 
@@ -375,7 +400,7 @@ ui.clearPrepSessionButton.addEventListener("click", async () => {
     await refreshIntervieweeDecisionState();
     setStatus("Active prep_id cleared.");
   } catch (error) {
-    setStatus(error.message, true);
+    setStatus(readErrorMessage(error), true);
   }
 });
 
@@ -410,7 +435,7 @@ ui.captureButton.addEventListener("click", async () => {
     setStatus("Profile captured. Review and edit before submit.");
     await persistPopupDraft();
   } catch (error) {
-    setStatus(error.message, true);
+    setStatus(readErrorMessage(error), true);
   }
 });
 
@@ -560,5 +585,5 @@ ui.openDashboardButton.addEventListener("click", () => {
 });
 
 loadInitialState().catch((error) => {
-  setStatus(error.message, true);
+  setStatus(readErrorMessage(error), true);
 });

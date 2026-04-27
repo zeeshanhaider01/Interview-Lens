@@ -15,7 +15,9 @@
   "host_permissions": [
     "https://*.linkedin.com/*",
     "http://localhost:8000/*",
-    "https://*.interviewerlens.com/*"
+    "https://*.interviewerlens.com/*",
+    "https://*.onrender.com/*",
+    "https://*.auth0.com/*"
   ],
   "content_scripts": [
     {
