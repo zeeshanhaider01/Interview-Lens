@@ -60,6 +60,10 @@ const INTERVIEWEE_UPLOAD_SCOPES = {
   SESSION_ONLY: "session_only",
   SAVE_AS_DEFAULT: "save_as_default",
 };
+const STATUS_COLORS = {
+  SUCCESS: "#008000",
+  ERROR: "#b91c1c",
+};
 
 function buildPopupDraft() {
   return {
@@ -132,7 +136,7 @@ async function persistPopupDraft() {
 
 function setStatus(message, isError = false) {
   ui.statusMessage.textContent = message;
-  ui.statusMessage.style.color = isError ? "#fca5a5" : "#a7f3d0";
+  ui.statusMessage.style.color = isError ? STATUS_COLORS.ERROR : STATUS_COLORS.SUCCESS;
 }
 
 function setAuthProgress(isVisible, label = "Authenticating...") {
