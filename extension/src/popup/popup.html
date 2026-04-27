@@ -10,6 +10,16 @@
     <main class="app">
       <h1>Interview Lens Collector</h1>
 
+      <section id="loggedOutGuidanceSection">
+        <h2>Guidance</h2>
+        <ol class="guidanceList">
+          <li>Sign up for Interview Lens if you are a new user.</li>
+          <li>Click Login and complete secure authentication.</li>
+          <li>After login, capture and submit your LinkedIn profile data.</li>
+        </ol>
+        <button id="openSignupButton" type="button">Sign Up on Interview Lens</button>
+      </section>
+
       <section>
         <h2>Authentication</h2>
         <div class="row">
@@ -23,7 +33,7 @@
         <p id="authStatus">Auth status: unknown</p>
       </section>
 
-      <section>
+      <section id="prepSessionSection">
         <h2>Prep Session</h2>
         <label for="prepIdInput">Preparation ID (prep_id)</label>
         <div class="row">
@@ -38,7 +48,7 @@
         </div>
       </section>
 
-      <section>
+      <section id="captureProfileSection">
         <h2>Capture LinkedIn Profile</h2>
         <label for="roleSelect">Profile Role</label>
         <select id="roleSelect">
@@ -71,7 +81,7 @@
         <button id="captureButton" type="button">Capture Current LinkedIn Page</button>
       </section>
 
-      <section>
+      <section id="reviewEditSection">
         <h2>Review & Edit</h2>
         <label for="experienceField">Experience</label>
         <textarea id="experienceField" rows="4"></textarea>
@@ -87,7 +97,7 @@
         <textarea id="honorsAwardsField" rows="3"></textarea>
       </section>
 
-      <section>
+      <section id="submitSection">
         <button id="submitButton" type="button">Send to Interview Lens</button>
       </section>
 

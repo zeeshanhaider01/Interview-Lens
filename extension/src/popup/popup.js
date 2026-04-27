@@ -9,6 +9,12 @@ const ui = {
   authProgress: document.getElementById("authProgress"),
   authProgressLabel: document.getElementById("authProgressLabel"),
   authStatus: document.getElementById("authStatus"),
+  loggedOutGuidanceSection: document.getElementById("loggedOutGuidanceSection"),
+  openSignupButton: document.getElementById("openSignupButton"),
+  prepSessionSection: document.getElementById("prepSessionSection"),
+  captureProfileSection: document.getElementById("captureProfileSection"),
+  reviewEditSection: document.getElementById("reviewEditSection"),
+  submitSection: document.getElementById("submitSection"),
   prepIdInput: document.getElementById("prepIdInput"),
   clearPrepSessionButton: document.getElementById("clearPrepSessionButton"),
   activePrepBadge: document.getElementById("activePrepBadge"),
@@ -142,13 +148,31 @@ function applyActionAvailability() {
   ui.captureButton.disabled = isAuthFlowPending;
 }
 
+function buildSignupUrl(baseUrl) {
+  const cleanBaseUrl = (baseUrl ?? "").trim().replace(/\/+$/, "");
+  if (!cleanBaseUrl) {
+    return "";
+  }
+  return `${cleanBaseUrl}/signup`;
+}
+
+function renderAuthStateUi() {
+  const showWorkflow = isAuthenticated;
+  ui.loggedOutGuidanceSection.classList.toggle("hidden", showWorkflow);
+  ui.prepSessionSection.classList.toggle("hidden", !showWorkflow);
+  ui.captureProfileSection.classList.toggle("hidden", !showWorkflow);
+  ui.reviewEditSection.classList.toggle("hidden", !showWorkflow);
+  ui.submitSection.classList.toggle("hidden", !showWorkflow);
+  ui.dashboardCtaSection.classList.toggle("hidden", !showWorkflow || !latestDashboardUrl);
+}
+
 function readErrorMessage(error, fallbackMessage = "Something went wrong.") {
   return error?.message || fallbackMessage;
 }
 
 function setDashboardCtaUrl(url) {
   latestDashboardUrl = (url ?? "").trim();
-  ui.dashboardCtaSection.classList.toggle("hidden", !latestDashboardUrl);
+  renderAuthStateUi();
 }
 
 function setActivePrepBadge(prepId) {
@@ -163,6 +187,7 @@ function setAuthUiState(authState) {
     ? "Auth status: authenticated"
     : "Auth status: not authenticated";
   applyActionAvailability();
+  renderAuthStateUi();
 }
 
 function getIntervieweeChoice() {
@@ -608,6 +633,16 @@ ui.openDashboardButton.addEventListener("click", () => {
   window.open(latestDashboardUrl, "_blank", "noopener,noreferrer");
 });
 
+ui.openSignupButton.addEventListener("click", () => {
+  const signupUrl = buildSignupUrl(currentSettings.dashboardUrl);
+  if (!signupUrl) {
+    setStatus("Signup URL is not configured.", true);
+    return;
+  }
+  window.open(signupUrl, "_blank", "noopener,noreferrer");
+});
+
+renderAuthStateUi();
 loadInitialState().catch((error) => {
   setStatus(readErrorMessage(error), true);
 });
