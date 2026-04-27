@@ -1,5 +1,5 @@
-import { queryTabs, runtimeSendMessage, sendMessageToTab, storageGet } from "../lib/browser-api.js";
-import { getSettings, saveSettings } from "../lib/config.js";
+import { queryTabs, runtimeSendMessage, sendMessageToTab, storageGet, storageSet } from "../lib/browser-api.js";
+import { getSettings, saveSettings, DEFAULT_SETTINGS, SETTINGS_UI_ENABLED } from "../lib/config.js";
 import { PROFILE_ROLES, SECTION_KEYS, STORAGE_KEYS } from "../lib/constants.js";
 import { normalizeCapture } from "../lib/normalizer.js";
 
@@ -45,6 +45,9 @@ const ui = {
 let latestDashboardUrl = "";
 let isAuthenticated = false;
 let hasDefaultIntervieweeProfile = false;
+let popupDraftSaveQueue = Promise.resolve();
+let currentResolvedSettings = { ...DEFAULT_SETTINGS };
+const POPUP_LOCAL_DRAFT_KEY = "popup_draft_local_backup";
 
 const INTERVIEWEE_PROFILE_CHOICES = {
   REUSE_SAVED: "reuse_saved",
@@ -55,6 +58,139 @@ const INTERVIEWEE_UPLOAD_SCOPES = {
   SESSION_ONLY: "session_only",
   SAVE_AS_DEFAULT: "save_as_default",
 };
+
+function readSettingsFromUi() {
+  if (!SETTINGS_UI_ENABLED || !ui.apiBaseUrl) {
+    return { ...currentResolvedSettings };
+  }
+  return {
+    apiBaseUrl: ui.apiBaseUrl.value,
+    dashboardUrl: ui.dashboardUrl.value,
+    auth0Domain: ui.auth0Domain.value,
+    auth0ClientId: ui.auth0ClientId.value,
+    auth0Audience: ui.auth0Audience.value,
+    clearPrepIdOnLogout: ui.clearPrepIdOnLogout.checked,
+  };
+}
+
+function buildPopupDraft() {
+  return {
+    settings: readSettingsFromUi(),
+    prepId: ui.prepIdInput.value.trim(),
+    role: ui.roleSelect.value,
+    intervieweeChoice: getIntervieweeChoice(),
+    uploadScope: getIntervieweeUploadScope(),
+    sections: readEditedSections(),
+    updatedAt: Date.now(),
+  };
+}
+
+const SETTINGS_TEXT_KEYS = ["apiBaseUrl", "dashboardUrl", "auth0Domain", "auth0ClientId", "auth0Audience"];
+
+function firstNonEmptyText(...candidates) {
+  for (const c of candidates) {
+    if (c != null && String(c).trim() !== "") {
+      return String(c);
+    }
+  }
+  return "";
+}
+
+function mergeSettingsFromDraftSources(a, b) {
+  const out = {};
+  for (const k of SETTINGS_TEXT_KEYS) {
+    out[k] = firstNonEmptyText(a?.[k], b?.[k]);
+  }
+  out.clearPrepIdOnLogout = Boolean(a?.clearPrepIdOnLogout ?? b?.clearPrepIdOnLogout);
+  return out;
+}
+
+/**
+ * `localStorage` and `chrome.storage` can be briefly out of sync. Merge per-field from both, then
+ * fill UI using non-empty + saved settings fallbacks (empty string is valid for `??` but is wrong
+ * for display when the other source has the value).
+ */
+function mergePopupDraftRecords(local, remote) {
+  if (!local && !remote) {
+    return null;
+  }
+  if (!local) {
+    return remote;
+  }
+  if (!remote) {
+    return local;
+  }
+  return {
+    ...remote,
+    ...local,
+    settings: mergeSettingsFromDraftSources(local.settings, remote.settings),
+    prepId: firstNonEmptyText(local.prepId, remote.prepId),
+  };
+}
+
+function isLikelyTeardownEmptySettings(settings) {
+  if (!settings) {
+    return true;
+  }
+  return SETTINGS_TEXT_KEYS.every((k) => !String(settings[k] ?? "").trim());
+}
+
+function hadNonEmptyTextSettings(stored) {
+  const s = stored?.settings;
+  if (!s) {
+    return false;
+  }
+  return SETTINGS_TEXT_KEYS.some((k) => String(s[k] ?? "").trim() !== "");
+}
+
+/**
+ * When the popup is closing, Chrome may run save handlers after inputs are cleared.
+ * If the new snapshot has all empty text settings but a previous save had data, keep the previous
+ * so we do not clobber a good draft.
+ */
+function applyTeardownSafeMerge(fresh) {
+  const previous = readLocalPopupDraft();
+  if (!previous || !hadNonEmptyTextSettings(previous) || !isLikelyTeardownEmptySettings(fresh.settings)) {
+    return fresh;
+  }
+  return {
+    ...fresh,
+    settings: { ...previous.settings },
+  };
+}
+
+function readLocalPopupDraft() {
+  try {
+    const raw = globalThis.localStorage?.getItem(POPUP_LOCAL_DRAFT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function writeLocalPopupDraft(draft) {
+  try {
+    globalThis.localStorage?.setItem(POPUP_LOCAL_DRAFT_KEY, JSON.stringify(draft));
+  } catch (_error) {
+    // Ignore storage write failures (quota/privacy modes).
+  }
+}
+
+async function persistPopupDraft() {
+  const draft = applyTeardownSafeMerge(buildPopupDraft());
+  // Synchronous backup to survive very fast popup-close events.
+  writeLocalPopupDraft(draft);
+  popupDraftSaveQueue = popupDraftSaveQueue
+    .catch(() => {
+      // Keep queue alive even if a previous write failed.
+    })
+    .then(() =>
+      storageSet({
+        [STORAGE_KEYS.POPUP_DRAFT]: draft,
+      })
+    );
+  return popupDraftSaveQueue;
+}
 
 function setStatus(message, isError = false) {
   ui.statusMessage.textContent = message;
@@ -187,24 +323,64 @@ async function refreshIntervieweeDecisionState() {
 }
 
 async function loadInitialState() {
+  // Apply local draft synchronously first so the user never sees an empty flash
+  // when async storage/runtime calls are still in flight.
+  const localDraft = readLocalPopupDraft();
+  const localSettings = localDraft?.settings ?? {};
+  if (SETTINGS_UI_ENABLED && ui.apiBaseUrl) {
+    ui.apiBaseUrl.value = firstNonEmptyText(localSettings.apiBaseUrl);
+    ui.dashboardUrl.value = firstNonEmptyText(localSettings.dashboardUrl);
+    ui.auth0Domain.value = firstNonEmptyText(localSettings.auth0Domain);
+    ui.auth0ClientId.value = firstNonEmptyText(localSettings.auth0ClientId);
+    ui.auth0Audience.value = firstNonEmptyText(localSettings.auth0Audience);
+    ui.clearPrepIdOnLogout.checked = Boolean(localSettings.clearPrepIdOnLogout);
+  }
+
   const settings = await getSettings();
-  ui.apiBaseUrl.value = settings.apiBaseUrl;
-  ui.dashboardUrl.value = settings.dashboardUrl;
-  ui.auth0Domain.value = settings.auth0Domain;
-  ui.auth0ClientId.value = settings.auth0ClientId;
-  ui.auth0Audience.value = settings.auth0Audience;
-  ui.clearPrepIdOnLogout.checked = Boolean(settings.clearPrepIdOnLogout);
+  const draftState = await storageGet(STORAGE_KEYS.POPUP_DRAFT);
+  const draft = mergePopupDraftRecords(
+    localDraft,
+    draftState[STORAGE_KEYS.POPUP_DRAFT] ?? null
+  );
+  const draftSettings = mergeSettingsFromDraftSources(draft?.settings, {});
+  const resolvedSettings = {
+    apiBaseUrl:
+      firstNonEmptyText(draftSettings.apiBaseUrl, settings.apiBaseUrl) || DEFAULT_SETTINGS.apiBaseUrl,
+    dashboardUrl:
+      firstNonEmptyText(draftSettings.dashboardUrl, settings.dashboardUrl) || DEFAULT_SETTINGS.dashboardUrl,
+    auth0Domain: firstNonEmptyText(draftSettings.auth0Domain, settings.auth0Domain),
+    auth0ClientId: firstNonEmptyText(draftSettings.auth0ClientId, settings.auth0ClientId),
+    auth0Audience: firstNonEmptyText(draftSettings.auth0Audience, settings.auth0Audience),
+  };
+  currentResolvedSettings = {
+    ...resolvedSettings,
+    clearPrepIdOnLogout: Boolean(draftSettings.clearPrepIdOnLogout ?? settings.clearPrepIdOnLogout),
+  };
+  if (SETTINGS_UI_ENABLED && ui.apiBaseUrl) {
+    ui.apiBaseUrl.value = resolvedSettings.apiBaseUrl;
+    ui.dashboardUrl.value = resolvedSettings.dashboardUrl;
+    ui.auth0Domain.value = resolvedSettings.auth0Domain;
+    ui.auth0ClientId.value = resolvedSettings.auth0ClientId;
+    ui.auth0Audience.value = resolvedSettings.auth0Audience;
+    ui.clearPrepIdOnLogout.checked = currentResolvedSettings.clearPrepIdOnLogout;
+  }
 
   const authState = await withRuntimeMessage({ type: "AUTH_STATE" });
   setAuthUiState(authState);
 
   const activeState = await withRuntimeMessage({ type: "GET_ACTIVE_PREP_ID" });
   const activePrepId = String(activeState?.prepId ?? "").trim();
+  const draftPrepId = String(draft?.prepId ?? "").trim();
   if (activePrepId) {
     ui.prepIdInput.value = activePrepId;
-    setDashboardCtaUrl(buildDashboardUrl(settings.dashboardUrl, activePrepId));
+    setDashboardCtaUrl(buildDashboardUrl(ui.dashboardUrl.value, activePrepId));
   }
   setActivePrepBadge(activePrepId);
+  if (!activePrepId && draftPrepId) {
+    ui.prepIdInput.value = draftPrepId;
+    setDashboardCtaUrl(buildDashboardUrl(ui.dashboardUrl.value, draftPrepId));
+    setActivePrepBadge(draftPrepId);
+  }
 
   const store = await storageGet(STORAGE_KEYS.LAST_CAPTURE);
   const cached = store[STORAGE_KEYS.LAST_CAPTURE];
@@ -214,10 +390,20 @@ async function loadInitialState() {
     setDashboardCtaUrl(buildDashboardUrl(settings.dashboardUrl, cached.prepId));
     setActivePrepBadge(cached.prepId);
   }
-  if (cached?.role && Object.values(PROFILE_ROLES).includes(cached.role)) {
+  if (draft?.role && Object.values(PROFILE_ROLES).includes(draft.role)) {
+    ui.roleSelect.value = draft.role;
+  } else if (cached?.role && Object.values(PROFILE_ROLES).includes(cached.role)) {
     ui.roleSelect.value = cached.role;
   }
-  writeSections(cached?.payload?.extracted_sections ?? {});
+  if (draft?.intervieweeChoice === INTERVIEWEE_PROFILE_CHOICES.UPLOAD_NEW) {
+    ui.intervieweeChoiceUpload.checked = true;
+    ui.intervieweeChoiceReuse.checked = false;
+  }
+  if (draft?.uploadScope === INTERVIEWEE_UPLOAD_SCOPES.SAVE_AS_DEFAULT) {
+    ui.uploadScopeDefault.checked = true;
+    ui.uploadScopeSessionOnly.checked = false;
+  }
+  writeSections(draft?.sections ?? cached?.payload?.extracted_sections ?? {});
   await refreshIntervieweeDecisionState();
 }
 
@@ -230,21 +416,17 @@ async function getCurrentLinkedInTab() {
   return active;
 }
 
-ui.saveSettingsButton.addEventListener("click", async () => {
-  try {
-    await saveSettings({
-      apiBaseUrl: ui.apiBaseUrl.value,
-      dashboardUrl: ui.dashboardUrl.value,
-      auth0Domain: ui.auth0Domain.value,
-      auth0ClientId: ui.auth0ClientId.value,
-      auth0Audience: ui.auth0Audience.value,
-      clearPrepIdOnLogout: ui.clearPrepIdOnLogout.checked,
-    });
-    setStatus("Settings saved.");
-  } catch (error) {
-    setStatus(error.message, true);
-  }
-});
+if (ui.saveSettingsButton) {
+  ui.saveSettingsButton.addEventListener("click", async () => {
+    try {
+      await saveSettings(readSettingsFromUi());
+      await persistPopupDraft();
+      setStatus("Settings saved.");
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  });
+}
 
 ui.loginButton.addEventListener("click", async () => {
   try {
@@ -263,13 +445,15 @@ ui.logoutButton.addEventListener("click", async () => {
     setAuthUiState(null);
     hasDefaultIntervieweeProfile = false;
     updateIntervieweeDecisionUi();
-    if (ui.clearPrepIdOnLogout.checked) {
+    if (readSettingsFromUi().clearPrepIdOnLogout) {
       ui.prepIdInput.value = "";
       setDashboardCtaUrl("");
       setActivePrepBadge("");
+      await persistPopupDraft();
       setStatus("Logged out. Active prep_id cleared.");
       return;
     }
+    await persistPopupDraft();
     setStatus("Logged out. Login required before creating/submitting.");
   } catch (error) {
     setStatus(error.message, true);
@@ -298,6 +482,7 @@ ui.prepIdInput.addEventListener("change", async () => {
     const prepId = await persistActivePrepId(ui.prepIdInput.value);
     setDashboardCtaUrl(buildDashboardUrl(ui.dashboardUrl.value, prepId));
     setActivePrepBadge(prepId);
+    await persistPopupDraft();
     await refreshIntervieweeDecisionState();
   } catch (error) {
     setStatus(error.message, true);
@@ -310,6 +495,7 @@ ui.clearPrepSessionButton.addEventListener("click", async () => {
     ui.prepIdInput.value = "";
     setDashboardCtaUrl("");
     setActivePrepBadge("");
+    await persistPopupDraft();
     await refreshIntervieweeDecisionState();
     setStatus("Active prep_id cleared.");
   } catch (error) {
@@ -346,6 +532,7 @@ ui.captureButton.addEventListener("click", async () => {
       },
     });
     setStatus("Profile captured. Review and edit before submit.");
+    await persistPopupDraft();
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -437,15 +624,62 @@ ui.submitButton.addEventListener("click", async () => {
 
 ui.roleSelect.addEventListener("change", () => {
   updateIntervieweeDecisionUi();
+  persistPopupDraft().catch(() => {
+    // Best-effort draft persistence.
+  });
 });
 
 ui.intervieweeChoiceReuse.addEventListener("change", () => {
   updateIntervieweeDecisionUi();
+  persistPopupDraft().catch(() => {
+    // Best-effort draft persistence.
+  });
 });
 
 ui.intervieweeChoiceUpload.addEventListener("change", () => {
   updateIntervieweeDecisionUi();
+  persistPopupDraft().catch(() => {
+    // Best-effort draft persistence.
+  });
 });
+
+ui.uploadScopeSessionOnly.addEventListener("change", () => {
+  persistPopupDraft().catch(() => {
+    // Best-effort draft persistence.
+  });
+});
+ui.uploadScopeDefault.addEventListener("change", () => {
+  persistPopupDraft().catch(() => {
+    // Best-effort draft persistence.
+  });
+});
+
+[
+  ui.apiBaseUrl,
+  ui.dashboardUrl,
+  ui.auth0Domain,
+  ui.auth0ClientId,
+  ui.auth0Audience,
+  ui.clearPrepIdOnLogout,
+  ui.prepIdInput,
+  ...Object.values(ui.fields),
+]
+  .filter(Boolean)
+  .forEach((element) => {
+  const saveDraft = () => {
+    persistPopupDraft().catch(() => {
+      // Best-effort draft persistence.
+    });
+  };
+  element.addEventListener("input", saveDraft);
+  element.addEventListener("change", saveDraft);
+  element.addEventListener("paste", () => {
+    // Pasted text is applied after the event loop tick.
+    setTimeout(saveDraft, 0);
+  });
+  // Do not use "blur" here: on popup close, blur can fire with inputs already empty and overwrite
+  // the good draft. input/change/paste is enough for normal editing.
+  });
 
 ui.openDashboardButton.addEventListener("click", () => {
   if (!latestDashboardUrl) {
