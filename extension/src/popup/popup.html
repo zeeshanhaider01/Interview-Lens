@@ -16,6 +16,10 @@
           <button id="loginButton" type="button">Login</button>
           <button id="logoutButton" type="button">Logout</button>
         </div>
+        <div id="authProgress" class="authProgress hidden" aria-live="polite">
+          <span class="spinner" aria-hidden="true"></span>
+          <span id="authProgressLabel">Authenticating...</span>
+        </div>
         <p id="authStatus">Auth status: unknown</p>
       </section>
 
