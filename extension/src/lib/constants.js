@@ -17,6 +17,7 @@ const STORAGE_KEYS = {
   SETTINGS: "collector_settings",
   LAST_CAPTURE: "last_capture",
   ACTIVE_PREP_ID: "active_prep_id",
+  POPUP_DRAFT: "popup_draft",
 };
 
 export { PROFILE_ROLES, SECTION_KEYS, STORAGE_KEYS };

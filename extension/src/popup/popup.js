@@ -1,16 +1,9 @@
-import { queryTabs, runtimeSendMessage, sendMessageToTab, storageGet } from "../lib/browser-api.js";
-import { getSettings, saveSettings } from "../lib/config.js";
+import { queryTabs, runtimeSendMessage, sendMessageToTab, storageGet, storageSet } from "../lib/browser-api.js";
+import { getSettings } from "../lib/config.js";
 import { PROFILE_ROLES, SECTION_KEYS, STORAGE_KEYS } from "../lib/constants.js";
 import { normalizeCapture } from "../lib/normalizer.js";
 
 const ui = {
-  apiBaseUrl: document.getElementById("apiBaseUrl"),
-  dashboardUrl: document.getElementById("dashboardUrl"),
-  auth0Domain: document.getElementById("auth0Domain"),
-  auth0ClientId: document.getElementById("auth0ClientId"),
-  auth0Audience: document.getElementById("auth0Audience"),
-  clearPrepIdOnLogout: document.getElementById("clearPrepIdOnLogout"),
-  saveSettingsButton: document.getElementById("saveSettingsButton"),
   loginButton: document.getElementById("loginButton"),
   logoutButton: document.getElementById("logoutButton"),
   authStatus: document.getElementById("authStatus"),
@@ -45,6 +38,9 @@ const ui = {
 let latestDashboardUrl = "";
 let isAuthenticated = false;
 let hasDefaultIntervieweeProfile = false;
+let popupDraftSaveQueue = Promise.resolve();
+let currentSettings = {};
+const POPUP_LOCAL_DRAFT_KEY = "popup_draft_local_backup";
 
 const INTERVIEWEE_PROFILE_CHOICES = {
   REUSE_SAVED: "reuse_saved",
@@ -55,6 +51,67 @@ const INTERVIEWEE_UPLOAD_SCOPES = {
   SESSION_ONLY: "session_only",
   SAVE_AS_DEFAULT: "save_as_default",
 };
+
+function buildPopupDraft() {
+  return {
+    prepId: ui.prepIdInput.value.trim(),
+    role: ui.roleSelect.value,
+    intervieweeChoice: getIntervieweeChoice(),
+    uploadScope: getIntervieweeUploadScope(),
+    sections: readEditedSections(),
+    updatedAt: Date.now(),
+  };
+}
+
+function mergePopupDraftRecords(local, remote) {
+  if (!local && !remote) {
+    return null;
+  }
+  if (!local) {
+    return remote;
+  }
+  if (!remote) {
+    return local;
+  }
+  return {
+    ...remote,
+    ...local,
+    prepId: String(local.prepId ?? remote.prepId ?? "").trim(),
+  };
+}
+
+function readLocalPopupDraft() {
+  try {
+    const raw = globalThis.localStorage?.getItem(POPUP_LOCAL_DRAFT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function writeLocalPopupDraft(draft) {
+  try {
+    globalThis.localStorage?.setItem(POPUP_LOCAL_DRAFT_KEY, JSON.stringify(draft));
+  } catch (_error) {
+    // Ignore storage write failures (quota/privacy modes).
+  }
+}
+
+async function persistPopupDraft() {
+  const draft = buildPopupDraft();
+  // Synchronous backup to survive very fast popup-close events.
+  writeLocalPopupDraft(draft);
+  popupDraftSaveQueue = popupDraftSaveQueue
+    .catch(() => {
+      // Keep queue alive even if a previous write failed.
+    })
+    .then(() =>
+      storageSet({
+        [STORAGE_KEYS.POPUP_DRAFT]: draft,
+      })
+    );
+  return popupDraftSaveQueue;
+}
 
 function setStatus(message, isError = false) {
   ui.statusMessage.textContent = message;
@@ -187,24 +244,31 @@ async function refreshIntervieweeDecisionState() {
 }
 
 async function loadInitialState() {
+  const localDraft = readLocalPopupDraft();
   const settings = await getSettings();
-  ui.apiBaseUrl.value = settings.apiBaseUrl;
-  ui.dashboardUrl.value = settings.dashboardUrl;
-  ui.auth0Domain.value = settings.auth0Domain;
-  ui.auth0ClientId.value = settings.auth0ClientId;
-  ui.auth0Audience.value = settings.auth0Audience;
-  ui.clearPrepIdOnLogout.checked = Boolean(settings.clearPrepIdOnLogout);
+  currentSettings = { ...settings };
+  const draftState = await storageGet(STORAGE_KEYS.POPUP_DRAFT);
+  const draft = mergePopupDraftRecords(
+    localDraft,
+    draftState[STORAGE_KEYS.POPUP_DRAFT] ?? null
+  );
 
   const authState = await withRuntimeMessage({ type: "AUTH_STATE" });
   setAuthUiState(authState);
 
   const activeState = await withRuntimeMessage({ type: "GET_ACTIVE_PREP_ID" });
   const activePrepId = String(activeState?.prepId ?? "").trim();
+  const draftPrepId = String(draft?.prepId ?? "").trim();
   if (activePrepId) {
     ui.prepIdInput.value = activePrepId;
     setDashboardCtaUrl(buildDashboardUrl(settings.dashboardUrl, activePrepId));
   }
   setActivePrepBadge(activePrepId);
+  if (!activePrepId && draftPrepId) {
+    ui.prepIdInput.value = draftPrepId;
+    setDashboardCtaUrl(buildDashboardUrl(settings.dashboardUrl, draftPrepId));
+    setActivePrepBadge(draftPrepId);
+  }
 
   const store = await storageGet(STORAGE_KEYS.LAST_CAPTURE);
   const cached = store[STORAGE_KEYS.LAST_CAPTURE];
@@ -214,10 +278,20 @@ async function loadInitialState() {
     setDashboardCtaUrl(buildDashboardUrl(settings.dashboardUrl, cached.prepId));
     setActivePrepBadge(cached.prepId);
   }
-  if (cached?.role && Object.values(PROFILE_ROLES).includes(cached.role)) {
+  if (draft?.role && Object.values(PROFILE_ROLES).includes(draft.role)) {
+    ui.roleSelect.value = draft.role;
+  } else if (cached?.role && Object.values(PROFILE_ROLES).includes(cached.role)) {
     ui.roleSelect.value = cached.role;
   }
-  writeSections(cached?.payload?.extracted_sections ?? {});
+  if (draft?.intervieweeChoice === INTERVIEWEE_PROFILE_CHOICES.UPLOAD_NEW) {
+    ui.intervieweeChoiceUpload.checked = true;
+    ui.intervieweeChoiceReuse.checked = false;
+  }
+  if (draft?.uploadScope === INTERVIEWEE_UPLOAD_SCOPES.SAVE_AS_DEFAULT) {
+    ui.uploadScopeDefault.checked = true;
+    ui.uploadScopeSessionOnly.checked = false;
+  }
+  writeSections(draft?.sections ?? cached?.payload?.extracted_sections ?? {});
   await refreshIntervieweeDecisionState();
 }
 
@@ -229,22 +303,6 @@ async function getCurrentLinkedInTab() {
   }
   return active;
 }
-
-ui.saveSettingsButton.addEventListener("click", async () => {
-  try {
-    await saveSettings({
-      apiBaseUrl: ui.apiBaseUrl.value,
-      dashboardUrl: ui.dashboardUrl.value,
-      auth0Domain: ui.auth0Domain.value,
-      auth0ClientId: ui.auth0ClientId.value,
-      auth0Audience: ui.auth0Audience.value,
-      clearPrepIdOnLogout: ui.clearPrepIdOnLogout.checked,
-    });
-    setStatus("Settings saved.");
-  } catch (error) {
-    setStatus(error.message, true);
-  }
-});
 
 ui.loginButton.addEventListener("click", async () => {
   try {
@@ -263,13 +321,15 @@ ui.logoutButton.addEventListener("click", async () => {
     setAuthUiState(null);
     hasDefaultIntervieweeProfile = false;
     updateIntervieweeDecisionUi();
-    if (ui.clearPrepIdOnLogout.checked) {
+    if (currentSettings.clearPrepIdOnLogout) {
       ui.prepIdInput.value = "";
       setDashboardCtaUrl("");
       setActivePrepBadge("");
+      await persistPopupDraft();
       setStatus("Logged out. Active prep_id cleared.");
       return;
     }
+    await persistPopupDraft();
     setStatus("Logged out. Login required before creating/submitting.");
   } catch (error) {
     setStatus(error.message, true);
@@ -284,7 +344,7 @@ ui.createPrepSessionButton.addEventListener("click", async () => {
     });
     ui.prepIdInput.value = data.prep_id;
     await persistActivePrepId(data.prep_id);
-    setDashboardCtaUrl(buildDashboardUrl(ui.dashboardUrl.value, data.prep_id));
+    setDashboardCtaUrl(buildDashboardUrl(currentSettings.dashboardUrl, data.prep_id));
     setActivePrepBadge(data.prep_id);
     await refreshIntervieweeDecisionState();
     setStatus("New prep session created.");
@@ -296,8 +356,9 @@ ui.createPrepSessionButton.addEventListener("click", async () => {
 ui.prepIdInput.addEventListener("change", async () => {
   try {
     const prepId = await persistActivePrepId(ui.prepIdInput.value);
-    setDashboardCtaUrl(buildDashboardUrl(ui.dashboardUrl.value, prepId));
+    setDashboardCtaUrl(buildDashboardUrl(currentSettings.dashboardUrl, prepId));
     setActivePrepBadge(prepId);
+    await persistPopupDraft();
     await refreshIntervieweeDecisionState();
   } catch (error) {
     setStatus(error.message, true);
@@ -310,6 +371,7 @@ ui.clearPrepSessionButton.addEventListener("click", async () => {
     ui.prepIdInput.value = "";
     setDashboardCtaUrl("");
     setActivePrepBadge("");
+    await persistPopupDraft();
     await refreshIntervieweeDecisionState();
     setStatus("Active prep_id cleared.");
   } catch (error) {
@@ -346,6 +408,7 @@ ui.captureButton.addEventListener("click", async () => {
       },
     });
     setStatus("Profile captured. Review and edit before submit.");
+    await persistPopupDraft();
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -374,7 +437,7 @@ ui.submitButton.addEventListener("click", async () => {
         if (!hasDefaultIntervieweeProfile) {
           throw new Error("No default interviewee profile found. Upload a new interviewee profile first.");
         }
-        setDashboardCtaUrl(buildDashboardUrl(ui.dashboardUrl.value, prepId));
+        setDashboardCtaUrl(buildDashboardUrl(currentSettings.dashboardUrl, prepId));
         setStatus(
           "Using saved default interviewee profile. Submit interviewer profile to continue this prep session."
         );
@@ -421,7 +484,7 @@ ui.submitButton.addEventListener("click", async () => {
       payload,
     });
     const dashboardUrl =
-      (data.dashboard_url ?? "").trim() || buildDashboardUrl(ui.dashboardUrl.value, prepId);
+      (data.dashboard_url ?? "").trim() || buildDashboardUrl(currentSettings.dashboardUrl, prepId);
     setDashboardCtaUrl(dashboardUrl);
     setStatus(
       role === PROFILE_ROLES.INTERVIEWEE && uploadScope === INTERVIEWEE_UPLOAD_SCOPES.SAVE_AS_DEFAULT
@@ -437,15 +500,56 @@ ui.submitButton.addEventListener("click", async () => {
 
 ui.roleSelect.addEventListener("change", () => {
   updateIntervieweeDecisionUi();
+  persistPopupDraft().catch(() => {
+    // Best-effort draft persistence.
+  });
 });
 
 ui.intervieweeChoiceReuse.addEventListener("change", () => {
   updateIntervieweeDecisionUi();
+  persistPopupDraft().catch(() => {
+    // Best-effort draft persistence.
+  });
 });
 
 ui.intervieweeChoiceUpload.addEventListener("change", () => {
   updateIntervieweeDecisionUi();
+  persistPopupDraft().catch(() => {
+    // Best-effort draft persistence.
+  });
 });
+
+ui.uploadScopeSessionOnly.addEventListener("change", () => {
+  persistPopupDraft().catch(() => {
+    // Best-effort draft persistence.
+  });
+});
+ui.uploadScopeDefault.addEventListener("change", () => {
+  persistPopupDraft().catch(() => {
+    // Best-effort draft persistence.
+  });
+});
+
+[
+  ui.prepIdInput,
+  ...Object.values(ui.fields),
+]
+  .filter(Boolean)
+  .forEach((element) => {
+  const saveDraft = () => {
+    persistPopupDraft().catch(() => {
+      // Best-effort draft persistence.
+    });
+  };
+  element.addEventListener("input", saveDraft);
+  element.addEventListener("change", saveDraft);
+  element.addEventListener("paste", () => {
+    // Pasted text is applied after the event loop tick.
+    setTimeout(saveDraft, 0);
+  });
+  // Do not use "blur" here: on popup close, blur can fire with inputs already empty and overwrite
+  // the good draft. input/change/paste is enough for normal editing.
+  });
 
 ui.openDashboardButton.addEventListener("click", () => {
   if (!latestDashboardUrl) {
