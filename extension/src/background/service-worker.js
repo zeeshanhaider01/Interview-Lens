@@ -6,7 +6,7 @@ import {
   upsertIntervieweeBaselineProfile,
 } from "../lib/api-client.js";
 import { getAuthState, loginWithAuth0, logout } from "../lib/auth.js";
-import { storageSet } from "../lib/browser-api.js";
+import { storageGet, storageSet } from "../lib/browser-api.js";
 import { STORAGE_KEYS } from "../lib/constants.js";
 
 async function clearUserSessionData() {
