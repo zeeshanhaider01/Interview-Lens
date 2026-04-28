@@ -27,6 +27,8 @@
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
   --scale-factor: 1;
+  --popup-width: 420px;
+  --popup-max-height: 620px;
 }
 
 body {
@@ -37,23 +39,14 @@ body {
   font-size: calc(var(--font-size-sm) * var(--scale-factor));
   line-height: var(--line-height-body);
   font-weight: var(--font-weight-regular);
+  width: var(--popup-width);
 }
 
 .app {
-  width: 420px;
-  max-height: 620px;
+  width: var(--popup-width);
+  max-height: var(--popup-max-height);
   overflow-y: auto;
   padding: 12px 12px 10px;
-}
-
-body.view-comfortable .app {
-  width: 480px;
-  max-height: 700px;
-}
-
-body.view-large .app {
-  width: 560px;
-  max-height: 780px;
 }
 
 .brandHeader {
@@ -68,7 +61,13 @@ body.view-large .app {
   align-items: end;
 }
 
-.viewControls > button {
+.viewControls > label[for="popupWidthRange"],
+.viewControls > label[for="popupHeightRange"] {
+  grid-column: span 2;
+}
+
+#popupWidthRange,
+#popupHeightRange {
   grid-column: span 2;
 }
 

@@ -20,7 +20,10 @@ const ui = {
   openSignupButton: document.getElementById("openSignupButton"),
   viewModeSelect: document.getElementById("viewModeSelect"),
   fontScaleSelect: document.getElementById("fontScaleSelect"),
-  openLargeViewButton: document.getElementById("openLargeViewButton"),
+  popupWidthRange: document.getElementById("popupWidthRange"),
+  popupHeightRange: document.getElementById("popupHeightRange"),
+  popupWidthValue: document.getElementById("popupWidthValue"),
+  popupHeightValue: document.getElementById("popupHeightValue"),
   prepSessionSection: document.getElementById("prepSessionSection"),
   captureProfileSection: document.getElementById("captureProfileSection"),
   reviewEditSection: document.getElementById("reviewEditSection"),
@@ -71,7 +74,11 @@ const POPUP_LOCAL_DRAFT_KEY = "popup_draft_local_backup";
 const DEFAULT_ACCESSIBILITY_PREFS = {
   viewMode: "compact",
   fontScale: "100",
+  popupWidth: "420",
+  popupHeight: "620",
 };
+const POPUP_WIDTH_RANGE = { min: 360, max: 760, step: 20 };
+const POPUP_HEIGHT_RANGE = { min: 500, max: 1000, step: 20 };
 
 const INTERVIEWEE_PROFILE_CHOICES = {
   REUSE_SAVED: "reuse_saved",
@@ -105,19 +112,54 @@ function applyAccessibilityPrefs(prefs) {
   const fontScale = ["100", "115", "130"].includes(String(prefs?.fontScale))
     ? String(prefs.fontScale)
     : DEFAULT_ACCESSIBILITY_PREFS.fontScale;
+  const popupWidth = normalizeAccessibilityRange(
+    prefs?.popupWidth,
+    POPUP_WIDTH_RANGE.min,
+    POPUP_WIDTH_RANGE.max,
+    POPUP_WIDTH_RANGE.step,
+    Number(DEFAULT_ACCESSIBILITY_PREFS.popupWidth)
+  );
+  const popupHeight = normalizeAccessibilityRange(
+    prefs?.popupHeight,
+    POPUP_HEIGHT_RANGE.min,
+    POPUP_HEIGHT_RANGE.max,
+    POPUP_HEIGHT_RANGE.step,
+    Number(DEFAULT_ACCESSIBILITY_PREFS.popupHeight)
+  );
 
   document.body.classList.remove("view-compact", "view-comfortable", "view-large");
   document.body.classList.add(`view-${viewMode}`);
   document.documentElement.style.setProperty("--scale-factor", String(Number(fontScale) / 100));
+  document.documentElement.style.setProperty("--popup-width", `${popupWidth}px`);
+  document.documentElement.style.setProperty("--popup-max-height", `${popupHeight}px`);
   ui.viewModeSelect.value = viewMode;
   ui.fontScaleSelect.value = fontScale;
+  ui.popupWidthRange.value = String(popupWidth);
+  ui.popupHeightRange.value = String(popupHeight);
+  ui.popupWidthValue.textContent = `${popupWidth}px`;
+  ui.popupHeightValue.textContent = `${popupHeight}px`;
+}
+
+function normalizeAccessibilityRange(value, min, max, step, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  const clamped = Math.min(max, Math.max(min, parsed));
+  return Math.round(clamped / step) * step;
+}
+
+function readAccessibilityPrefsFromUi() {
+  return {
+    viewMode: ui.viewModeSelect.value,
+    fontScale: ui.fontScaleSelect.value,
+    popupWidth: String(ui.popupWidthRange.value),
+    popupHeight: String(ui.popupHeightRange.value),
+  };
 }
 
 async function persistAccessibilityPrefs() {
-  const prefs = {
-    viewMode: ui.viewModeSelect.value,
-    fontScale: ui.fontScaleSelect.value,
-  };
+  const prefs = readAccessibilityPrefsFromUi();
   applyAccessibilityPrefs(prefs);
   await storageSet({ [STORAGE_KEYS.POPUP_ACCESSIBILITY_PREFS]: prefs });
 }
@@ -127,7 +169,11 @@ function autoResizeTextarea(textarea) {
     return;
   }
   textarea.style.height = "auto";
-  const maxHeight = document.body.classList.contains("view-large") ? 340 : 260;
+  const popupMaxHeight = Number.parseInt(
+    getComputedStyle(document.documentElement).getPropertyValue("--popup-max-height"),
+    10
+  );
+  const maxHeight = Math.max(220, Math.round((Number.isFinite(popupMaxHeight) ? popupMaxHeight : 620) * 0.44));
   textarea.style.height = `${Math.min(textarea.scrollHeight + 2, maxHeight)}px`;
 }
 
@@ -823,13 +869,26 @@ ui.fontScaleSelect.addEventListener("change", () => {
   });
 });
 
-ui.openLargeViewButton.addEventListener("click", () => {
-  const largeViewUrl = extensionApi?.runtime?.getURL?.("src/popup/popup.html");
-  if (!largeViewUrl) {
-    setStatus("Unable to open large view in this browser.", true);
-    return;
-  }
-  window.open(largeViewUrl, "_blank", "noopener,noreferrer");
+ui.popupWidthRange.addEventListener("input", () => {
+  applyAccessibilityPrefs(readAccessibilityPrefsFromUi());
+  autoResizeAllTextareas();
+});
+
+ui.popupHeightRange.addEventListener("input", () => {
+  applyAccessibilityPrefs(readAccessibilityPrefsFromUi());
+  autoResizeAllTextareas();
+});
+
+ui.popupWidthRange.addEventListener("change", () => {
+  persistAccessibilityPrefs().catch(() => {
+    // Best-effort preference persistence.
+  });
+});
+
+ui.popupHeightRange.addEventListener("change", () => {
+  persistAccessibilityPrefs().catch(() => {
+    // Best-effort preference persistence.
+  });
 });
 
 renderAuthStateUi();
