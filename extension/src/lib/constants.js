@@ -19,6 +19,7 @@ const STORAGE_KEYS = {
   LAST_CAPTURE: "last_capture",
   ACTIVE_PREP_ID: "active_prep_id",
   POPUP_DRAFT: "popup_draft",
+  POPUP_ACCESSIBILITY_PREFS: "popup_accessibility_prefs",
 };
 
 export { PROFILE_ROLES, SECTION_KEYS, STORAGE_KEYS };
