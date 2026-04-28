@@ -24,6 +24,14 @@
             <option value="115">115%</option>
             <option value="130">130%</option>
           </select>
+          <label class="checkboxLabel viewToggleLabel">
+            <input id="relativeSizingCheckbox" type="checkbox" />
+            Relative sizing (from active tab)
+          </label>
+          <button id="refreshRelativeSizingButton" type="button" class="btnOutline">Refresh Relative Size</button>
+          <p id="relativeSizingHint" class="hintText hidden">
+            Manual width/height are disabled while relative sizing is enabled.
+          </p>
           <label for="popupWidthRange">Popup width <span id="popupWidthValue">420px</span></label>
           <input id="popupWidthRange" type="range" min="360" max="760" step="20" value="420" />
           <label for="popupHeightRange">Popup height <span id="popupHeightValue">620px</span></label>

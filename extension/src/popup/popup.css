@@ -62,7 +62,10 @@ body {
 }
 
 .viewControls > label[for="popupWidthRange"],
-.viewControls > label[for="popupHeightRange"] {
+.viewControls > label[for="popupHeightRange"],
+.viewControls > .viewToggleLabel,
+.viewControls > #refreshRelativeSizingButton,
+.viewControls > #relativeSizingHint {
   grid-column: span 2;
 }
 
