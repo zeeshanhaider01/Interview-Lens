@@ -16,7 +16,10 @@ const ui = {
   reviewEditSection: document.getElementById("reviewEditSection"),
   submitSection: document.getElementById("submitSection"),
   prepIdInput: document.getElementById("prepIdInput"),
+  addPrepSessionButton: document.getElementById("addPrepSessionButton"),
   clearPrepSessionButton: document.getElementById("clearPrepSessionButton"),
+  prepValidationProgress: document.getElementById("prepValidationProgress"),
+  prepValidationLabel: document.getElementById("prepValidationLabel"),
   activePrepBadge: document.getElementById("activePrepBadge"),
   activePrepBadgeValue: document.getElementById("activePrepBadgeValue"),
   roleSelect: document.getElementById("roleSelect"),
@@ -49,6 +52,8 @@ let hasDefaultIntervieweeProfile = false;
 let popupDraftSaveQueue = Promise.resolve();
 let currentSettings = {};
 let isAuthFlowPending = false;
+let isPrepValidationPending = false;
+let activePrepId = "";
 const POPUP_LOCAL_DRAFT_KEY = "popup_draft_local_backup";
 
 const INTERVIEWEE_PROFILE_CHOICES = {
@@ -150,6 +155,7 @@ function applyActionAvailability() {
   ui.createPrepSessionButton.disabled = isAuthFlowPending || !isAuthenticated;
   ui.submitButton.disabled = isAuthFlowPending || !isAuthenticated;
   ui.captureButton.disabled = isAuthFlowPending;
+  updatePrepActionButtonsVisibility();
 }
 
 function buildSignupUrl(baseUrl) {
@@ -181,8 +187,27 @@ function setDashboardCtaUrl(url) {
 
 function setActivePrepBadge(prepId) {
   const value = String(prepId ?? "").trim();
+  activePrepId = value;
   ui.activePrepBadge.classList.toggle("hidden", !value);
   ui.activePrepBadgeValue.textContent = value;
+  updatePrepActionButtonsVisibility();
+}
+
+function setPrepValidationProgress(isVisible, label = "Validating preparation ID...") {
+  ui.prepValidationProgress.classList.toggle("hidden", !isVisible);
+  ui.prepValidationLabel.textContent = label;
+}
+
+function updatePrepActionButtonsVisibility() {
+  const inputValue = ui.prepIdInput.value.trim();
+  const shouldShowAdd = !inputValue || inputValue !== activePrepId;
+  const shouldShowClear = !shouldShowAdd;
+
+  ui.addPrepSessionButton.classList.toggle("hidden", !shouldShowAdd);
+  ui.clearPrepSessionButton.classList.toggle("hidden", !shouldShowClear);
+  ui.addPrepSessionButton.disabled =
+    isAuthFlowPending || !isAuthenticated || isPrepValidationPending || !inputValue;
+  ui.clearPrepSessionButton.disabled = isAuthFlowPending || isPrepValidationPending || !isAuthenticated;
 }
 
 function setAuthUiState(authState) {
@@ -431,13 +456,46 @@ ui.createPrepSessionButton.addEventListener("click", async () => {
   }
 });
 
-ui.prepIdInput.addEventListener("change", async () => {
+ui.addPrepSessionButton.addEventListener("click", async () => {
+  const prepId = ui.prepIdInput.value.trim();
+  if (!prepId) {
+    setStatus("Preparation ID is required before validation.", true);
+    return;
+  }
+  if (prepId === activePrepId) {
+    setStatus("Preparation ID is already active.");
+    return;
+  }
   try {
-    const prepId = await persistActivePrepId(ui.prepIdInput.value);
+    isPrepValidationPending = true;
+    updatePrepActionButtonsVisibility();
+    setPrepValidationProgress(true, "Validating preparation ID...");
+    await withRuntimeMessage({ type: "GET_PREP_SESSION_DETAIL", prepId });
+    await persistActivePrepId(prepId);
     setDashboardCtaUrl(buildDashboardUrl(currentSettings.dashboardUrl, prepId));
     setActivePrepBadge(prepId);
     await persistPopupDraft();
     await refreshIntervieweeDecisionState();
+    setStatus("Preparation ID validated and added successfully.");
+  } catch (error) {
+    setStatus(
+      readErrorMessage(
+        error,
+        "Preparation ID is invalid. Please add a valid ID or create a new prep_id."
+      ),
+      true
+    );
+  } finally {
+    isPrepValidationPending = false;
+    setPrepValidationProgress(false);
+    updatePrepActionButtonsVisibility();
+  }
+});
+
+ui.prepIdInput.addEventListener("change", async () => {
+  try {
+    await persistPopupDraft();
+    updatePrepActionButtonsVisibility();
   } catch (error) {
     setStatus(readErrorMessage(error), true);
   }
@@ -618,6 +676,9 @@ ui.uploadScopeDefault.addEventListener("change", () => {
     persistPopupDraft().catch(() => {
       // Best-effort draft persistence.
     });
+    if (element === ui.prepIdInput) {
+      updatePrepActionButtonsVisibility();
+    }
   };
   element.addEventListener("input", saveDraft);
   element.addEventListener("change", saveDraft);
@@ -647,6 +708,7 @@ ui.openSignupButton.addEventListener("click", () => {
 });
 
 renderAuthStateUi();
+updatePrepActionButtonsVisibility();
 loadInitialState().catch((error) => {
   setStatus(readErrorMessage(error), true);
 });
