@@ -20,6 +20,9 @@ const ui = {
   openSignupButton: document.getElementById("openSignupButton"),
   viewModeSelect: document.getElementById("viewModeSelect"),
   fontScaleSelect: document.getElementById("fontScaleSelect"),
+  relativeSizingCheckbox: document.getElementById("relativeSizingCheckbox"),
+  refreshRelativeSizingButton: document.getElementById("refreshRelativeSizingButton"),
+  relativeSizingHint: document.getElementById("relativeSizingHint"),
   popupWidthRange: document.getElementById("popupWidthRange"),
   popupHeightRange: document.getElementById("popupHeightRange"),
   popupWidthValue: document.getElementById("popupWidthValue"),
@@ -74,8 +77,14 @@ const POPUP_LOCAL_DRAFT_KEY = "popup_draft_local_backup";
 const DEFAULT_ACCESSIBILITY_PREFS = {
   viewMode: "compact",
   fontScale: "100",
+  relativeSizing: "off",
   popupWidth: "420",
   popupHeight: "620",
+};
+const RELATIVE_SIZE_RATIO_BY_VIEW = {
+  compact: { width: 0.32, height: 0.72 },
+  comfortable: { width: 0.38, height: 0.8 },
+  large: { width: 0.44, height: 0.9 },
 };
 const POPUP_WIDTH_RANGE = { min: 360, max: 760, step: 20 };
 const POPUP_HEIGHT_RANGE = { min: 500, max: 1000, step: 20 };
@@ -112,6 +121,7 @@ function applyAccessibilityPrefs(prefs) {
   const fontScale = ["100", "115", "130"].includes(String(prefs?.fontScale))
     ? String(prefs.fontScale)
     : DEFAULT_ACCESSIBILITY_PREFS.fontScale;
+  const relativeSizing = prefs?.relativeSizing === "on" ? "on" : "off";
   const popupWidth = normalizeAccessibilityRange(
     prefs?.popupWidth,
     POPUP_WIDTH_RANGE.min,
@@ -134,10 +144,14 @@ function applyAccessibilityPrefs(prefs) {
   document.documentElement.style.setProperty("--popup-max-height", `${popupHeight}px`);
   ui.viewModeSelect.value = viewMode;
   ui.fontScaleSelect.value = fontScale;
+  ui.relativeSizingCheckbox.checked = relativeSizing === "on";
   ui.popupWidthRange.value = String(popupWidth);
   ui.popupHeightRange.value = String(popupHeight);
   ui.popupWidthValue.textContent = `${popupWidth}px`;
   ui.popupHeightValue.textContent = `${popupHeight}px`;
+  ui.popupWidthRange.disabled = relativeSizing === "on";
+  ui.popupHeightRange.disabled = relativeSizing === "on";
+  ui.relativeSizingHint.classList.toggle("hidden", relativeSizing !== "on");
 }
 
 function normalizeAccessibilityRange(value, min, max, step, fallback) {
@@ -153,6 +167,7 @@ function readAccessibilityPrefsFromUi() {
   return {
     viewMode: ui.viewModeSelect.value,
     fontScale: ui.fontScaleSelect.value,
+    relativeSizing: ui.relativeSizingCheckbox.checked ? "on" : "off",
     popupWidth: String(ui.popupWidthRange.value),
     popupHeight: String(ui.popupHeightRange.value),
   };
@@ -162,6 +177,76 @@ async function persistAccessibilityPrefs() {
   const prefs = readAccessibilityPrefsFromUi();
   applyAccessibilityPrefs(prefs);
   await storageSet({ [STORAGE_KEYS.POPUP_ACCESSIBILITY_PREFS]: prefs });
+}
+
+async function getActiveTabForSizing() {
+  const tabs = await queryTabs({ active: true, currentWindow: true });
+  const active = tabs?.[0];
+  if (!active?.id) {
+    throw new Error("Could not read active tab for relative sizing.");
+  }
+  return active;
+}
+
+async function deriveRelativePopupSize() {
+  const activeTab = await getActiveTabForSizing();
+  let viewportWidth = Number(activeTab.width);
+  let viewportHeight = Number(activeTab.height);
+  try {
+    const response = await sendMessageToTab(activeTab.id, { type: "GET_VIEWPORT_SIZE" });
+    const data = response?.data ?? response;
+    if (response?.ok === false) {
+      throw new Error(response?.error || "Failed to read active tab viewport.");
+    }
+    viewportWidth = Number(data?.width ?? viewportWidth);
+    viewportHeight = Number(data?.height ?? viewportHeight);
+  } catch (_error) {
+    // Fallback to tab dimensions when content-script messaging is unavailable on current page.
+  }
+  if (!Number.isFinite(viewportWidth) || !Number.isFinite(viewportHeight)) {
+    throw new Error("Unable to derive viewport dimensions from active tab.");
+  }
+  const ratios = RELATIVE_SIZE_RATIO_BY_VIEW[ui.viewModeSelect.value] ?? RELATIVE_SIZE_RATIO_BY_VIEW.compact;
+  return {
+    popupWidth: String(
+      normalizeAccessibilityRange(
+        viewportWidth * ratios.width,
+        POPUP_WIDTH_RANGE.min,
+        POPUP_WIDTH_RANGE.max,
+        POPUP_WIDTH_RANGE.step,
+        Number(DEFAULT_ACCESSIBILITY_PREFS.popupWidth)
+      )
+    ),
+    popupHeight: String(
+      normalizeAccessibilityRange(
+        viewportHeight * ratios.height,
+        POPUP_HEIGHT_RANGE.min,
+        POPUP_HEIGHT_RANGE.max,
+        POPUP_HEIGHT_RANGE.step,
+        Number(DEFAULT_ACCESSIBILITY_PREFS.popupHeight)
+      )
+    ),
+  };
+}
+
+async function refreshRelativeSizing(shouldPersist = true) {
+  if (!ui.relativeSizingCheckbox.checked) {
+    return;
+  }
+  try {
+    const sizePrefs = await deriveRelativePopupSize();
+    const nextPrefs = {
+      ...readAccessibilityPrefsFromUi(),
+      ...sizePrefs,
+      relativeSizing: "on",
+    };
+    applyAccessibilityPrefs(nextPrefs);
+    if (shouldPersist) {
+      await storageSet({ [STORAGE_KEYS.POPUP_ACCESSIBILITY_PREFS]: nextPrefs });
+    }
+  } catch (error) {
+    setStatus(error.message || "Could not calculate relative size.", true);
+  }
 }
 
 function autoResizeTextarea(textarea) {
@@ -477,6 +562,9 @@ async function loadInitialState() {
   applyAccessibilityPrefs(
     draftState[STORAGE_KEYS.POPUP_ACCESSIBILITY_PREFS] ?? DEFAULT_ACCESSIBILITY_PREFS
   );
+  if ((draftState[STORAGE_KEYS.POPUP_ACCESSIBILITY_PREFS] ?? DEFAULT_ACCESSIBILITY_PREFS).relativeSizing === "on") {
+    await refreshRelativeSizing(false);
+  }
   if (lastAuthResult?.message) {
     setStatus(lastAuthResult.message, lastAuthResult.status === "error");
   }
@@ -857,10 +945,17 @@ ui.openSignupButton.addEventListener("click", () => {
 });
 
 ui.viewModeSelect.addEventListener("change", () => {
-  persistAccessibilityPrefs().catch(() => {
+  (async () => {
+    if (ui.relativeSizingCheckbox.checked) {
+      await refreshRelativeSizing(true);
+      autoResizeAllTextareas();
+      return;
+    }
+    await persistAccessibilityPrefs();
+    autoResizeAllTextareas();
+  })().catch(() => {
     // Best-effort preference persistence.
   });
-  autoResizeAllTextareas();
 });
 
 ui.fontScaleSelect.addEventListener("change", () => {
@@ -870,25 +965,59 @@ ui.fontScaleSelect.addEventListener("change", () => {
 });
 
 ui.popupWidthRange.addEventListener("input", () => {
+  if (ui.relativeSizingCheckbox.checked) {
+    return;
+  }
   applyAccessibilityPrefs(readAccessibilityPrefsFromUi());
   autoResizeAllTextareas();
 });
 
 ui.popupHeightRange.addEventListener("input", () => {
+  if (ui.relativeSizingCheckbox.checked) {
+    return;
+  }
   applyAccessibilityPrefs(readAccessibilityPrefsFromUi());
   autoResizeAllTextareas();
 });
 
 ui.popupWidthRange.addEventListener("change", () => {
+  if (ui.relativeSizingCheckbox.checked) {
+    return;
+  }
   persistAccessibilityPrefs().catch(() => {
     // Best-effort preference persistence.
   });
 });
 
 ui.popupHeightRange.addEventListener("change", () => {
+  if (ui.relativeSizingCheckbox.checked) {
+    return;
+  }
   persistAccessibilityPrefs().catch(() => {
     // Best-effort preference persistence.
   });
+});
+
+ui.relativeSizingCheckbox.addEventListener("change", () => {
+  (async () => {
+    if (ui.relativeSizingCheckbox.checked) {
+      await refreshRelativeSizing(true);
+      autoResizeAllTextareas();
+      return;
+    }
+    await persistAccessibilityPrefs();
+    autoResizeAllTextareas();
+  })().catch(() => {
+    // Best-effort preference persistence.
+  });
+});
+
+ui.refreshRelativeSizingButton.addEventListener("click", () => {
+  refreshRelativeSizing(true)
+    .then(() => autoResizeAllTextareas())
+    .catch(() => {
+      // Best-effort relative refresh.
+    });
 });
 
 renderAuthStateUi();

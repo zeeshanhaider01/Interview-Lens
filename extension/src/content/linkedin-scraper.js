@@ -153,6 +153,17 @@
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === "GET_VIEWPORT_SIZE") {
+      sendResponse({
+        ok: true,
+        data: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          url: window.location.href,
+        },
+      });
+      return;
+    }
     if (message?.type !== "SCRAPE_PROFILE") {
       return;
     }
