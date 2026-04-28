@@ -41,7 +41,12 @@
         <label for="prepIdInput">Preparation ID (prep_id)</label>
         <div class="row">
           <input id="prepIdInput" type="text" placeholder="Paste prep_id from Interview Lens" />
+          <button id="addPrepSessionButton" type="button" class="btnPrimary">Add</button>
           <button id="clearPrepSessionButton" type="button" class="btnOutline">Clear</button>
+        </div>
+        <div id="prepValidationProgress" class="authProgress hidden" aria-live="polite">
+          <span class="spinner" aria-hidden="true"></span>
+          <span id="prepValidationLabel">Validating preparation ID...</span>
         </div>
         <p id="activePrepBadge" class="prepBadge hidden">
           Active prep_id: <span id="activePrepBadgeValue"></span>
