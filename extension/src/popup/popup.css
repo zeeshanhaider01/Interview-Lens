@@ -26,6 +26,7 @@
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
+  --scale-factor: 1;
 }
 
 body {
@@ -33,18 +34,42 @@ body {
   background: var(--bg-page);
   color: var(--text-primary);
   font-family: var(--font-family-base);
-  font-size: var(--font-size-sm);
+  font-size: calc(var(--font-size-sm) * var(--scale-factor));
   line-height: var(--line-height-body);
   font-weight: var(--font-weight-regular);
 }
 
 .app {
   width: 420px;
+  max-height: 620px;
+  overflow-y: auto;
   padding: 12px 12px 10px;
+}
+
+body.view-comfortable .app {
+  width: 480px;
+  max-height: 700px;
+}
+
+body.view-large .app {
+  width: 560px;
+  max-height: 780px;
 }
 
 .brandHeader {
   margin: 0 0 10px;
+}
+
+.viewControls {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 8px;
+  align-items: end;
+}
+
+.viewControls > button {
+  grid-column: span 2;
 }
 
 .brandSubheading {
@@ -118,6 +143,12 @@ button {
 
 textarea {
   resize: vertical;
+  min-height: 88px;
+}
+
+body.view-comfortable textarea,
+body.view-large textarea {
+  min-height: 112px;
 }
 
 button {

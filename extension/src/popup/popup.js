@@ -1,4 +1,11 @@
-import { queryTabs, runtimeSendMessage, sendMessageToTab, storageGet, storageSet } from "../lib/browser-api.js";
+import {
+  extensionApi,
+  queryTabs,
+  runtimeSendMessage,
+  sendMessageToTab,
+  storageGet,
+  storageSet,
+} from "../lib/browser-api.js";
 import { getSettings } from "../lib/config.js";
 import { PROFILE_ROLES, SECTION_KEYS, STORAGE_KEYS } from "../lib/constants.js";
 import { normalizeCapture } from "../lib/normalizer.js";
@@ -11,6 +18,9 @@ const ui = {
   authStatus: document.getElementById("authStatus"),
   loggedOutGuidanceSection: document.getElementById("loggedOutGuidanceSection"),
   openSignupButton: document.getElementById("openSignupButton"),
+  viewModeSelect: document.getElementById("viewModeSelect"),
+  fontScaleSelect: document.getElementById("fontScaleSelect"),
+  openLargeViewButton: document.getElementById("openLargeViewButton"),
   prepSessionSection: document.getElementById("prepSessionSection"),
   captureProfileSection: document.getElementById("captureProfileSection"),
   reviewEditSection: document.getElementById("reviewEditSection"),
@@ -32,6 +42,9 @@ const ui = {
   uploadScopeDefault: document.getElementById("uploadScopeDefault"),
   createPrepSessionButton: document.getElementById("createPrepSessionButton"),
   captureButton: document.getElementById("captureButton"),
+  captureProgress: document.getElementById("captureProgress"),
+  captureProgressLabel: document.getElementById("captureProgressLabel"),
+  captureSummary: document.getElementById("captureSummary"),
   submitButton: document.getElementById("submitButton"),
   dashboardCtaSection: document.getElementById("dashboardCtaSection"),
   openDashboardButton: document.getElementById("openDashboardButton"),
@@ -55,6 +68,10 @@ let isAuthFlowPending = false;
 let isPrepValidationPending = false;
 let activePrepId = "";
 const POPUP_LOCAL_DRAFT_KEY = "popup_draft_local_backup";
+const DEFAULT_ACCESSIBILITY_PREFS = {
+  viewMode: "compact",
+  fontScale: "100",
+};
 
 const INTERVIEWEE_PROFILE_CHOICES = {
   REUSE_SAVED: "reuse_saved",
@@ -69,6 +86,67 @@ const STATUS_COLORS = {
   SUCCESS: "#008000",
   ERROR: "#b91c1c",
 };
+
+function setCaptureProgress(isVisible, label = "Capturing...") {
+  ui.captureProgress.classList.toggle("hidden", !isVisible);
+  ui.captureProgressLabel.textContent = label;
+}
+
+function setCaptureSummary(message = "") {
+  const summary = String(message ?? "").trim();
+  ui.captureSummary.textContent = summary;
+  ui.captureSummary.classList.toggle("hidden", !summary);
+}
+
+function applyAccessibilityPrefs(prefs) {
+  const viewMode = ["compact", "comfortable", "large"].includes(prefs?.viewMode)
+    ? prefs.viewMode
+    : DEFAULT_ACCESSIBILITY_PREFS.viewMode;
+  const fontScale = ["100", "115", "130"].includes(String(prefs?.fontScale))
+    ? String(prefs.fontScale)
+    : DEFAULT_ACCESSIBILITY_PREFS.fontScale;
+
+  document.body.classList.remove("view-compact", "view-comfortable", "view-large");
+  document.body.classList.add(`view-${viewMode}`);
+  document.documentElement.style.setProperty("--scale-factor", String(Number(fontScale) / 100));
+  ui.viewModeSelect.value = viewMode;
+  ui.fontScaleSelect.value = fontScale;
+}
+
+async function persistAccessibilityPrefs() {
+  const prefs = {
+    viewMode: ui.viewModeSelect.value,
+    fontScale: ui.fontScaleSelect.value,
+  };
+  applyAccessibilityPrefs(prefs);
+  await storageSet({ [STORAGE_KEYS.POPUP_ACCESSIBILITY_PREFS]: prefs });
+}
+
+function autoResizeTextarea(textarea) {
+  if (!textarea) {
+    return;
+  }
+  textarea.style.height = "auto";
+  const maxHeight = document.body.classList.contains("view-large") ? 340 : 260;
+  textarea.style.height = `${Math.min(textarea.scrollHeight + 2, maxHeight)}px`;
+}
+
+function autoResizeAllTextareas() {
+  for (const field of Object.values(ui.fields)) {
+    autoResizeTextarea(field);
+  }
+}
+
+function summarizeCapture(normalizedCapture) {
+  const counts = normalizedCapture?.confidence_flags?.section_counts ?? {};
+  const totalCount = Object.values(counts).reduce((sum, count) => sum + Number(count || 0), 0);
+  const quality = totalCount >= 12 ? "high" : totalCount >= 4 ? "medium" : "low";
+  const orderedCounts = SECTION_KEYS.map((key) => `${key}: ${counts[key] ?? 0}`).join(", ");
+  if (quality === "low") {
+    return `Partial capture (${orderedCounts}). Please review and manually add missing details.`;
+  }
+  return `Capture quality ${quality}. Section counts: ${orderedCounts}.`;
+}
 
 function buildPopupDraft() {
   return {
@@ -279,6 +357,7 @@ function writeSections(sections = {}) {
   for (const key of SECTION_KEYS) {
     ui.fields[key].value = (sections[key] ?? []).join("\n");
   }
+  autoResizeAllTextareas();
 }
 
 function resetPopupFormAfterLogout() {
@@ -342,12 +421,16 @@ async function loadInitialState() {
   const draftState = await storageGet([
     STORAGE_KEYS.POPUP_DRAFT,
     STORAGE_KEYS.LAST_AUTH_RESULT,
+    STORAGE_KEYS.POPUP_ACCESSIBILITY_PREFS,
   ]);
   const draft = mergePopupDraftRecords(
     localDraft,
     draftState[STORAGE_KEYS.POPUP_DRAFT] ?? null
   );
   const lastAuthResult = draftState[STORAGE_KEYS.LAST_AUTH_RESULT] ?? null;
+  applyAccessibilityPrefs(
+    draftState[STORAGE_KEYS.POPUP_ACCESSIBILITY_PREFS] ?? DEFAULT_ACCESSIBILITY_PREFS
+  );
   if (lastAuthResult?.message) {
     setStatus(lastAuthResult.message, lastAuthResult.status === "error");
   }
@@ -516,6 +599,19 @@ ui.clearPrepSessionButton.addEventListener("click", async () => {
 });
 
 ui.captureButton.addEventListener("click", async () => {
+  const progressSteps = [
+    "Starting capture...",
+    "Loading LinkedIn profile content...",
+    "Expanding visible sections...",
+    "Extracting section data...",
+  ];
+  let progressIndex = 0;
+  setCaptureSummary("");
+  setCaptureProgress(true, progressSteps[progressIndex]);
+  const progressTimer = setInterval(() => {
+    progressIndex = Math.min(progressIndex + 1, progressSteps.length - 1);
+    setCaptureProgress(true, progressSteps[progressIndex]);
+  }, 600);
   try {
     if (
       ui.roleSelect.value === PROFILE_ROLES.INTERVIEWEE &&
@@ -535,6 +631,7 @@ ui.captureButton.addEventListener("click", async () => {
     }
     const normalized = normalizeCapture(response.data);
     writeSections(normalized.extracted_sections);
+    setCaptureSummary(summarizeCapture(normalized));
     await withRuntimeMessage({
       type: "SAVE_LAST_CAPTURE",
       payload: {
@@ -547,6 +644,10 @@ ui.captureButton.addEventListener("click", async () => {
     await persistPopupDraft();
   } catch (error) {
     setStatus(readErrorMessage(error), true);
+    setCaptureSummary("");
+  } finally {
+    clearInterval(progressTimer);
+    setCaptureProgress(false);
   }
 });
 
@@ -678,6 +779,8 @@ ui.uploadScopeDefault.addEventListener("change", () => {
     });
     if (element === ui.prepIdInput) {
       updatePrepActionButtonsVisibility();
+    } else {
+      autoResizeTextarea(element);
     }
   };
   element.addEventListener("input", saveDraft);
@@ -705,6 +808,28 @@ ui.openSignupButton.addEventListener("click", () => {
     return;
   }
   window.open(signupUrl, "_blank", "noopener,noreferrer");
+});
+
+ui.viewModeSelect.addEventListener("change", () => {
+  persistAccessibilityPrefs().catch(() => {
+    // Best-effort preference persistence.
+  });
+  autoResizeAllTextareas();
+});
+
+ui.fontScaleSelect.addEventListener("change", () => {
+  persistAccessibilityPrefs().catch(() => {
+    // Best-effort preference persistence.
+  });
+});
+
+ui.openLargeViewButton.addEventListener("click", () => {
+  const largeViewUrl = extensionApi?.runtime?.getURL?.("src/popup/popup.html");
+  if (!largeViewUrl) {
+    setStatus("Unable to open large view in this browser.", true);
+    return;
+  }
+  window.open(largeViewUrl, "_blank", "noopener,noreferrer");
 });
 
 renderAuthStateUi();

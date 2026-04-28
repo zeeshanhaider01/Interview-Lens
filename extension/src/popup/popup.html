@@ -11,6 +11,21 @@
       <header class="brandHeader">
         <h1>Interview Lens Collector</h1>
         <p class="brandSubheading">Capture LinkedIn profiles for prep sessions</p>
+        <div class="viewControls">
+          <label for="viewModeSelect">View mode</label>
+          <select id="viewModeSelect">
+            <option value="compact">Compact</option>
+            <option value="comfortable">Comfortable</option>
+            <option value="large">Large</option>
+          </select>
+          <label for="fontScaleSelect">Text size</label>
+          <select id="fontScaleSelect">
+            <option value="100">100%</option>
+            <option value="115">115%</option>
+            <option value="130">130%</option>
+          </select>
+          <button id="openLargeViewButton" type="button" class="btnOutline">Open Large View</button>
+        </div>
       </header>
 
       <section id="loggedOutGuidanceSection">
@@ -87,6 +102,14 @@
           </div>
         </div>
         <button id="captureButton" type="button" class="btnPrimary">Capture Current LinkedIn Page</button>
+        <div id="captureProgress" class="authProgress hidden" aria-live="polite">
+          <span class="spinner" aria-hidden="true"></span>
+          <span id="captureProgressLabel">Starting capture...</span>
+        </div>
+        <p id="captureSummary" class="hintText hidden"></p>
+        <p class="hintText">
+          Auto-capture is best-effort and may miss some details. Review all fields and manually edit or paste missing data before submit.
+        </p>
       </section>
 
       <section id="reviewEditSection">
