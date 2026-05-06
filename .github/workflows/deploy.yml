@@ -4,12 +4,46 @@ on:
   push:
     branches: [main]
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PATH FILTERING STRATEGY
+#
+# Each job declares which folder it cares about using the `paths` filter on a
+# separate workflow trigger or via job-level conditions.
+#
+# We use a single `changes` job (dorny/paths-filter) as a routing layer:
+#   - backend/** changed  →  run test + deploy-backend
+#   - frontend/** changed →  run deploy-frontend
+#   - both changed        →  run all three jobs in parallel
+#
+# This means pushing a CSS fix never touches EC2.
+# Pushing a Django fix never triggers a frontend build.
+# ─────────────────────────────────────────────────────────────────────────────
+
 jobs:
-  # ──────────────────────────────────────────────
-  # Job 1: Run the test suite on GitHub's runner
-  # ──────────────────────────────────────────────
+
+  # ── Routing: detect which folders changed ──────────────────────────────────
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+
+  # ── Job 1: Django test suite ───────────────────────────────────────────────
   test:
     name: Test (Django)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
 
     defaults:
@@ -43,13 +77,12 @@ jobs:
       - name: Run tests
         run: python manage.py test --verbosity=2
 
-  # ──────────────────────────────────────────────
-  # Job 2: Deploy to EC2 — only if tests passed
-  # ──────────────────────────────────────────────
-  deploy:
-    name: Deploy to EC2
-    runs-on: ubuntu-latest
+  # ── Job 2: Deploy backend to EC2 (only if tests passed) ───────────────────
+  deploy-backend:
+    name: Deploy Backend → EC2
     needs: test
+    if: needs.test.result == 'success'
+    runs-on: ubuntu-latest
 
     steps:
       - name: SSH into EC2 and deploy
@@ -69,10 +102,85 @@ jobs:
             pip install -r requirements.txt --quiet
 
             python manage.py migrate --noinput
-
             python manage.py collectstatic --noinput --clear
 
             sudo systemctl restart gunicorn
             sudo systemctl restart celery
 
-            echo "Deploy complete."
+            echo "Backend deploy complete."
+
+  # ── Job 3: Deploy frontend ─────────────────────────────────────────────────
+  #
+  # PLATFORM-AGNOSTIC ZONE
+  # ───────────────────────
+  # This job builds the React app and deploys it.
+  # Only the final "Deploy" step needs to change when you switch hosting.
+  #
+  # Current hosting: Vercel
+  # To switch to EC2:   replace the Vercel step with an scp + ssh step
+  # To switch to S3:    replace with aws s3 sync dist/ s3://your-bucket
+  # To switch to other: replace with whatever CLI that platform provides
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy-frontend:
+    name: Deploy Frontend → Vercel
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── BUILD STEP (platform-independent — always stays the same) ──────────
+      - name: Build React app
+        run: npm run build
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_AUTH0_DOMAIN: ${{ secrets.VITE_AUTH0_DOMAIN }}
+          VITE_AUTH0_CLIENT_ID: ${{ secrets.VITE_AUTH0_CLIENT_ID }}
+          VITE_AUTH0_AUDIENCE: ${{ secrets.VITE_AUTH0_AUDIENCE }}
+
+      # ── DEPLOY STEP (swap this block when you change hosting) ──────────────
+      #
+      # Current: Vercel
+      # Secrets needed: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
+      #
+      - name: Deploy to Vercel
+        run: npx vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      #
+      # ── FUTURE: Switch to EC2 (uncomment and remove the Vercel step above) ──
+      # - name: Deploy to EC2
+      #   uses: appleboy/ssh-action@v1.0.3
+      #   with:
+      #     host: ${{ secrets.EC2_HOST }}
+      #     username: ${{ secrets.EC2_USER }}
+      #     key: ${{ secrets.EC2_SSH_KEY }}
+      #     script: |
+      #       rm -rf /var/www/interview-lens/*
+      #       cp -r /tmp/dist/* /var/www/interview-lens/
+      #       sudo systemctl reload nginx
+      #
+      # ── FUTURE: Switch to S3 + CloudFront (uncomment and remove Vercel step) ─
+      # - name: Deploy to S3
+      #   run: aws s3 sync dist/ s3://${{ secrets.S3_BUCKET }} --delete
+      #   env:
+      #     AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     AWS_DEFAULT_REGION: us-east-1
