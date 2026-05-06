@@ -40,6 +40,10 @@ Key backend endpoints for extension:
 
 ## Staging and production setup (Render)
 
+> For self-hosted deployment on AWS EC2 (Django + Gunicorn + Celery + Redis + RDS + Nginx), see [docs/aws-deployment.md](docs/aws-deployment.md).
+
+
+
 This project now supports:
 - SQLite by default for local development
 - Postgres when `DATABASE_URL` is present (staging/production)
