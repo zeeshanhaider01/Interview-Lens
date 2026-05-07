@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+
 class PersonProfileSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=200)
     education = serializers.CharField()

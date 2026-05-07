@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -108,7 +109,8 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {"user": f"{os.getenv('DAILY_RATELIMIT', '200')}/day"}
 }
 
-from corsheaders.defaults import default_headers
+from corsheaders.defaults import default_headers  # noqa: E402
+
 CORS_ALLOWED_ORIGINS = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
 
 CORS_ALLOW_HEADERS = list(default_headers) + ["authorization"]

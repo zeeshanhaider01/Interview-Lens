@@ -5,10 +5,15 @@ from django.core.cache import cache
 from django.test import override_settings
 from django.urls import reverse
 from rest_framework.test import APITestCase
-from api.auth import Auth0User
-from api.models import IntervieweeBaselineProfile, PrepProfileSubmission, PrepSession, User
-from api.tasks import run_prediction_task
 
+from api.auth import Auth0User
+from api.models import (
+    IntervieweeBaselineProfile,
+    PrepProfileSubmission,
+    PrepSession,
+    User,
+)
+from api.tasks import run_prediction_task
 
 TEST_CACHE = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 

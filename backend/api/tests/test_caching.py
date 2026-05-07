@@ -1,12 +1,14 @@
-from django.test import TestCase, override_settings
+import json
+from unittest import mock
+
 from django.core.cache import cache
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from rest_framework.test import APITestCase
-from api.models import InterviewPrediction, User
+
 from api.auth import Auth0User
+from api.models import InterviewPrediction, User
 from api.tasks import run_prediction_task
-from unittest import mock
-import json
 
 # Use an in-process cache so tests never require a live Redis connection.
 TEST_CACHE = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
