@@ -5,8 +5,8 @@ from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
-from .models import InterviewPrediction
 from .ai_client import AIClientError, generate_questions
+from .models import InterviewPrediction
 
 
 def compute_fingerprint(user_identifier, interviewee, interviewer, prompt_version="", regenerate_nonce=""):

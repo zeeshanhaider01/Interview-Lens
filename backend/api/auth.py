@@ -2,8 +2,8 @@
 
 import requests
 from django.conf import settings
-from rest_framework import authentication, exceptions
 from jose import jwt
+from rest_framework import authentication, exceptions
 
 
 class Auth0User:

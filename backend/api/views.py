@@ -1,23 +1,25 @@
 # backend/api/views.py
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework import status, permissions
+from urllib.parse import urlencode
+
 from django.conf import settings
 from django.utils import timezone
-from urllib.parse import urlencode
-from .serializers import (
-    IntervieweeBaselineProfileSerializer,
-    PredictRequestSerializer,
-    PrepProfileSubmissionSerializer,
-    PrepSessionCreateSerializer,
-    PrepSessionUpdateSerializer,
-)
+from rest_framework import permissions, status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+
 from .models import IntervieweeBaselineProfile, PrepProfileSubmission, PrepSession, User
 from .prediction_service import (
     get_prediction_state,
     mark_prediction_enqueue_failed,
     reserve_prediction_job,
     run_prediction_pipeline,
+)
+from .serializers import (
+    IntervieweeBaselineProfileSerializer,
+    PredictRequestSerializer,
+    PrepProfileSubmissionSerializer,
+    PrepSessionCreateSerializer,
+    PrepSessionUpdateSerializer,
 )
 from .tasks import run_prediction_task
 

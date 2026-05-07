@@ -1,0 +1,17 @@
+[tool.ruff]
+# Check all Python files in the backend
+include = ["*.py"]
+
+# Minimum Python version to target
+target-version = "py312"
+
+[tool.ruff.lint]
+# Rule sets enabled:
+#   E / W  — pycodestyle errors and warnings (spacing, line length, etc.)
+#   F      — Pyflakes (undefined names, unused imports, unused variables)
+#   I      — isort (import ordering)
+select = ["E", "W", "F", "I"]
+
+# Ignored rules:
+#   E501 — line too long (Django settings and long strings make this noisy)
+ignore = ["E501"]
