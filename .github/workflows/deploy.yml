@@ -55,7 +55,9 @@ jobs:
       DJANGO_DEBUG: "True"
       DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1"
       DATABASE_URL: ""
-      REDIS_URL: ""
+      # REDIS_URL intentionally not set — falls back to the default in settings.py.
+      # All test classes use @override_settings(CACHES=TEST_CACHE) so no real
+      # Redis connection is ever attempted during the test run.
       AUTH0_DOMAIN: "test.auth0.com"
       AUTH0_API_AUDIENCE: "https://test-audience"
       AUTH0_ISSUER: "https://test.auth0.com/"
