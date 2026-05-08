@@ -3,6 +3,7 @@ name: CI / CD — Interview Lens
 on:
   push:
     branches: [main]
+  workflow_dispatch:   # enables the "Run workflow" button on GitHub Actions UI
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PATH FILTERING STRATEGY
