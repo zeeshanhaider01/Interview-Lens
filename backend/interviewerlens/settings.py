@@ -143,7 +143,7 @@ ENABLE_CACHING = os.getenv("ENABLE_CACHING", "True").lower() in ("1", "true", "y
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"),
+        "LOCATION": os.getenv("REDIS_URL") or "redis://127.0.0.1:6379/0",
         "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
     }
 }
@@ -153,7 +153,7 @@ CACHE_TTL_RUNNING = int(os.getenv("CACHE_TTL_RUNNING", "300"))   # lock TTL (def
 CACHE_TTL_RESULT = int(os.getenv("CACHE_TTL_RESULT", "86400"))  # result cache (default 24h)
 
 # ------- CELERY CONFIGURATION -------
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"))
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL") or os.getenv("REDIS_URL") or "redis://127.0.0.1:6379/0"
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
 CELERY_TASK_ALWAYS_EAGER = getenv_bool("CELERY_TASK_ALWAYS_EAGER", "False")
 CELERY_TASK_EAGER_PROPAGATES = getenv_bool("CELERY_TASK_EAGER_PROPAGATES", "True")
