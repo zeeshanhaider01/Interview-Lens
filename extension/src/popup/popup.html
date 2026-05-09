@@ -90,11 +90,11 @@
 
       <section id="captureProfileSection">
         <h2>Capture LinkedIn Profile</h2>
-        <label for="roleSelect">Profile Role</label>
-        <select id="roleSelect">
-          <option value="INTERVIEWEE">Interviewee</option>
-          <option value="INTERVIEWER">Interviewer</option>
-        </select>
+        <input type="hidden" id="roleSelect" value="INTERVIEWEE" />
+        <div class="roleToggleGroup" role="group" aria-label="Profile role">
+          <button type="button" id="roleToggleInterviewee" class="roleToggleBtn active" data-role="INTERVIEWEE">Interviewee</button>
+          <button type="button" id="roleToggleInterviewer" class="roleToggleBtn" data-role="INTERVIEWER">Interviewer</button>
+        </div>
         <div id="intervieweeDecisionSection" class="hidden mt8">
           <p id="intervieweeDecisionHint" class="hintText">
             Choose whether to reuse your saved interviewee profile or upload a new one.
