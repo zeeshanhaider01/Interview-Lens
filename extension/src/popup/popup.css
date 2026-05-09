@@ -312,3 +312,10 @@ textarea:focus-visible {
 .hidden {
   display: none;
 }
+
+.createPrepFields {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
