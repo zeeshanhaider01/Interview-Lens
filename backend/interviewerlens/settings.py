@@ -105,9 +105,11 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ["api.auth.Auth0JWTAuthentication"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
-    "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.UserRateThrottle"],
+    "DEFAULT_THROTTLE_CLASSES": ["api.throttling.DailyUserThrottle"],
     "DEFAULT_THROTTLE_RATES": {"user": f"{os.getenv('DAILY_RATELIMIT', '200')}/day"}
 }
+
+THROTTLE_EXEMPT_SUBS = os.getenv("THROTTLE_EXEMPT_SUBS", "")
 
 from corsheaders.defaults import default_headers  # noqa: E402
 
