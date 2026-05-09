@@ -50,6 +50,11 @@ const ui = {
   createPrepCompanyInput: document.getElementById("createPrepCompanyInput"),
   createPrepSessionButton: document.getElementById("createPrepSessionButton"),
   captureButton: document.getElementById("captureButton"),
+  capturedProfileBadge: document.getElementById("capturedProfileBadge"),
+  capturedProfileAvatar: document.getElementById("capturedProfileAvatar"),
+  capturedProfileName: document.getElementById("capturedProfileName"),
+  capturedProfileRole: document.getElementById("capturedProfileRole"),
+  capturedProfileClear: document.getElementById("capturedProfileClear"),
   captureProgress: document.getElementById("captureProgress"),
   captureProgressLabel: document.getElementById("captureProgressLabel"),
   captureSummary: document.getElementById("captureSummary"),
@@ -114,6 +119,20 @@ function setCaptureSummary(message = "") {
   const summary = String(message ?? "").trim();
   ui.captureSummary.textContent = summary;
   ui.captureSummary.classList.toggle("hidden", !summary);
+}
+
+function setCapturedProfileBadge(profileName, role) {
+  const name = String(profileName ?? "").trim();
+  if (!name) {
+    ui.capturedProfileBadge.classList.add("hidden");
+    return;
+  }
+  const initial = name.charAt(0).toUpperCase();
+  ui.capturedProfileAvatar.textContent = initial;
+  ui.capturedProfileName.textContent = name;
+  const roleLabel = role === PROFILE_ROLES.INTERVIEWER ? "Interviewer" : "Interviewee";
+  ui.capturedProfileRole.textContent = roleLabel;
+  ui.capturedProfileBadge.classList.remove("hidden");
 }
 
 function applyAccessibilityPrefs(prefs) {
@@ -610,6 +629,9 @@ async function loadInitialState() {
     ui.uploadScopeSessionOnly.checked = false;
   }
   writeSections(draft?.sections ?? cached?.payload?.extracted_sections ?? {});
+  if (cached?.payload?.metadata?.profile_name) {
+    setCapturedProfileBadge(cached.payload.metadata.profile_name, cached.role);
+  }
   await refreshIntervieweeDecisionState();
 }
 
@@ -738,6 +760,10 @@ ui.clearPrepSessionButton.addEventListener("click", async () => {
   }
 });
 
+ui.capturedProfileClear.addEventListener("click", () => {
+  setCapturedProfileBadge("");
+});
+
 ui.captureButton.addEventListener("click", async () => {
   const progressSteps = [
     "Starting capture...",
@@ -747,6 +773,7 @@ ui.captureButton.addEventListener("click", async () => {
   ];
   let progressIndex = 0;
   setCaptureSummary("");
+  setCapturedProfileBadge("");
   setCaptureProgress(true, progressSteps[progressIndex]);
   const progressTimer = setInterval(() => {
     progressIndex = Math.min(progressIndex + 1, progressSteps.length - 1);
@@ -771,6 +798,7 @@ ui.captureButton.addEventListener("click", async () => {
     }
     const normalized = normalizeCapture(response.data);
     writeSections(normalized.extracted_sections);
+    setCapturedProfileBadge(normalized.metadata.profile_name, ui.roleSelect.value);
     setCaptureSummary(summarizeCapture(normalized));
     await withRuntimeMessage({
       type: "SAVE_LAST_CAPTURE",
