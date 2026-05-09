@@ -393,3 +393,46 @@ textarea:focus-visible {
 .capturedProfileClearBtn:hover {
   background: rgba(10, 54, 34, 0.3);
 }
+
+/* Role toggle pill — replaces the profile role <select> */
+.roleToggleGroup {
+  display: flex;
+  margin: 6px 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-muted);
+}
+
+.roleToggleBtn {
+  flex: 1;
+  padding: 7px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  width: auto;
+}
+
+.roleToggleBtn:first-of-type {
+  border-right: 1px solid var(--border-color);
+}
+
+.roleToggleBtn:hover:not(.active) {
+  background: #e9ecef;
+  color: var(--text-primary);
+}
+
+.roleToggleBtn.active {
+  background: var(--brand-primary);
+  color: #fff;
+  font-weight: var(--font-weight-semibold);
+}
+
+.roleToggleBtn.active:hover {
+  background: var(--brand-primary-hover);
+}

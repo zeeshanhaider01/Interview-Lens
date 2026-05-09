@@ -39,6 +39,8 @@ const ui = {
   activePrepBadge: document.getElementById("activePrepBadge"),
   activePrepBadgeValue: document.getElementById("activePrepBadgeValue"),
   roleSelect: document.getElementById("roleSelect"),
+  roleToggleInterviewee: document.getElementById("roleToggleInterviewee"),
+  roleToggleInterviewer: document.getElementById("roleToggleInterviewer"),
   intervieweeDecisionSection: document.getElementById("intervieweeDecisionSection"),
   intervieweeDecisionHint: document.getElementById("intervieweeDecisionHint"),
   intervieweeChoiceReuse: document.getElementById("intervieweeChoiceReuse"),
@@ -140,6 +142,14 @@ function setCapturedProfileBadge(profileName, role, showFallback = false) {
   const roleLabel = role === PROFILE_ROLES.INTERVIEWER ? "Interviewer" : "Interviewee";
   ui.capturedProfileRole.textContent = roleLabel;
   ui.capturedProfileBadge.classList.remove("hidden");
+}
+
+function setRoleToggle(role) {
+  const value = Object.values(PROFILE_ROLES).includes(role) ? role : PROFILE_ROLES.INTERVIEWEE;
+  ui.roleSelect.value = value;
+  ui.roleToggleInterviewee.classList.toggle("active", value === PROFILE_ROLES.INTERVIEWEE);
+  ui.roleToggleInterviewer.classList.toggle("active", value === PROFILE_ROLES.INTERVIEWER);
+  updateIntervieweeDecisionUi();
 }
 
 function applyAccessibilityPrefs(prefs) {
@@ -523,7 +533,7 @@ function resetPopupFormAfterLogout() {
   ui.prepIdInput.value = "";
   setDashboardCtaUrl("");
   setActivePrepBadge("");
-  ui.roleSelect.value = PROFILE_ROLES.INTERVIEWEE;
+  setRoleToggle(PROFILE_ROLES.INTERVIEWEE);
   ui.intervieweeChoiceReuse.checked = true;
   ui.intervieweeChoiceUpload.checked = false;
   ui.uploadScopeSessionOnly.checked = true;
@@ -623,9 +633,9 @@ async function loadInitialState() {
     setActivePrepBadge(cached.prepId);
   }
   if (draft?.role && Object.values(PROFILE_ROLES).includes(draft.role)) {
-    ui.roleSelect.value = draft.role;
+    setRoleToggle(draft.role);
   } else if (cached?.role && Object.values(PROFILE_ROLES).includes(cached.role)) {
-    ui.roleSelect.value = cached.role;
+    setRoleToggle(cached.role);
   }
   if (draft?.intervieweeChoice === INTERVIEWEE_PROFILE_CHOICES.UPLOAD_NEW) {
     ui.intervieweeChoiceUpload.checked = true;
@@ -910,10 +920,12 @@ ui.submitButton.addEventListener("click", async () => {
   }
 });
 
-ui.roleSelect.addEventListener("change", () => {
-  updateIntervieweeDecisionUi();
-  persistPopupDraft().catch(() => {
-    // Best-effort draft persistence.
+[ui.roleToggleInterviewee, ui.roleToggleInterviewer].forEach((btn) => {
+  btn.addEventListener("click", () => {
+    setRoleToggle(btn.dataset.role);
+    persistPopupDraft().catch(() => {
+      // Best-effort draft persistence.
+    });
   });
 });
 
