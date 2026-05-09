@@ -46,6 +46,8 @@ const ui = {
   intervieweeUploadScopeSection: document.getElementById("intervieweeUploadScopeSection"),
   uploadScopeSessionOnly: document.getElementById("uploadScopeSessionOnly"),
   uploadScopeDefault: document.getElementById("uploadScopeDefault"),
+  createPrepTitleInput: document.getElementById("createPrepTitleInput"),
+  createPrepCompanyInput: document.getElementById("createPrepCompanyInput"),
   createPrepSessionButton: document.getElementById("createPrepSessionButton"),
   captureButton: document.getElementById("captureButton"),
   captureProgress: document.getElementById("captureProgress"),
@@ -658,11 +660,15 @@ ui.logoutButton.addEventListener("click", async () => {
 
 ui.createPrepSessionButton.addEventListener("click", async () => {
   try {
+    const title = ui.createPrepTitleInput.value.trim();
+    const company_name = ui.createPrepCompanyInput.value.trim();
     const data = await withRuntimeMessage({
       type: "CREATE_PREP_SESSION",
-      payload: { title: "Created from extension" },
+      payload: { title: title || "Created from extension", company_name },
     });
     ui.prepIdInput.value = data.prep_id;
+    ui.createPrepTitleInput.value = "";
+    ui.createPrepCompanyInput.value = "";
     await persistActivePrepId(data.prep_id);
     setDashboardCtaUrl(buildDashboardUrl(currentSettings.dashboardUrl, data.prep_id));
     setActivePrepBadge(data.prep_id);
