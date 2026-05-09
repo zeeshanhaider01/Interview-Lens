@@ -319,3 +319,77 @@ textarea:focus-visible {
   gap: 4px;
   margin-bottom: 8px;
 }
+
+/* Captured profile badge — shown below the capture button after a successful scrape */
+.capturedProfileBadge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 5px 8px;
+  background: #d1e7dd;
+  border: 1px solid #a3cfbb;
+  border-radius: 20px;
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
+  color: #0a3622;
+  font-weight: var(--font-weight-medium);
+}
+
+.capturedProfileAvatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--brand-success);
+  color: #fff;
+  font-size: 10px;
+  font-weight: var(--font-weight-bold);
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+#capturedProfileName {
+  flex: 1;
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.capturedProfileRole {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(25, 135, 84, 0.15);
+  color: #0a4a22;
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  text-transform: capitalize;
+}
+
+.capturedProfileClearBtn {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  min-width: unset;
+  padding: 0;
+  border-radius: 50%;
+  border: none;
+  background: rgba(10, 54, 34, 0.15);
+  color: #0a3622;
+  font-size: 13px;
+  line-height: 1;
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.capturedProfileClearBtn:hover {
+  background: rgba(10, 54, 34, 0.3);
+}
