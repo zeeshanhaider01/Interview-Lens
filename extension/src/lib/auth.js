@@ -104,6 +104,21 @@ async function getValidAccessToken() {
 }
 
 async function logout() {
+  const settings = await getSettings();
+
+  if (settings.auth0Domain && settings.auth0ClientId) {
+    const logoutUrl = new URL(`https://${settings.auth0Domain}/v2/logout`);
+    logoutUrl.searchParams.set("client_id", settings.auth0ClientId);
+    try {
+      await extensionApi.identity.launchWebAuthFlow({
+        url: logoutUrl.toString(),
+        interactive: false,
+      });
+    } catch {
+      // Session cookie cleared best-effort; always clear local storage below
+    }
+  }
+
   await storageSet({ [STORAGE_KEYS.AUTH]: null });
 }
 
