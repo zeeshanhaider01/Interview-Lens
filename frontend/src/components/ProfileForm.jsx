@@ -381,7 +381,15 @@ export default function ProfileForm() {
       <Card className="shadow-sm mb-4">
         <Card.Header className="bg-white d-flex flex-wrap align-items-center justify-content-between gap-2">
           <h4 className="mb-0 text-primary">Prep sessions</h4>
-          <Button variant="outline-secondary" size="sm" onClick={() => loadSessions()} disabled={sessionsLoading}>
+          <Button variant="outline-primary" size="sm" onClick={() => loadSessions()} disabled={sessionsLoading} className="d-flex align-items-center gap-1">
+            {sessionsLoading ? (
+              <Spinner animation="border" size="sm" />
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                <path fillRule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+              </svg>
+            )}
             Refresh list
           </Button>
         </Card.Header>
