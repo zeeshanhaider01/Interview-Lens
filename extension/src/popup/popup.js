@@ -121,15 +121,22 @@ function setCaptureSummary(message = "") {
   ui.captureSummary.classList.toggle("hidden", !summary);
 }
 
-function setCapturedProfileBadge(profileName, role) {
-  const name = String(profileName ?? "").trim();
-  if (!name) {
+function setCapturedProfileBadge(profileName, role, showFallback = false) {
+  // Strip invisible/zero-width Unicode characters that LinkedIn injects.
+  const name = String(profileName ?? "")
+    .replace(/[\u200b\u200c\u200d\u200e\u200f\u00ad\ufeff\u034f\u115f\u1160\u17b4\u17b5\u3164]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // With no name and not a real-capture call, just hide the badge (used for explicit clear).
+  if (!name && !showFallback) {
     ui.capturedProfileBadge.classList.add("hidden");
     return;
   }
-  const initial = name.charAt(0).toUpperCase();
-  ui.capturedProfileAvatar.textContent = initial;
-  ui.capturedProfileName.textContent = name;
+
+  const displayName = name || "LinkedIn Profile";
+  ui.capturedProfileAvatar.textContent = displayName.charAt(0).toUpperCase();
+  ui.capturedProfileName.textContent = displayName;
   const roleLabel = role === PROFILE_ROLES.INTERVIEWER ? "Interviewer" : "Interviewee";
   ui.capturedProfileRole.textContent = roleLabel;
   ui.capturedProfileBadge.classList.remove("hidden");
@@ -629,8 +636,8 @@ async function loadInitialState() {
     ui.uploadScopeSessionOnly.checked = false;
   }
   writeSections(draft?.sections ?? cached?.payload?.extracted_sections ?? {});
-  if (cached?.payload?.metadata?.profile_name) {
-    setCapturedProfileBadge(cached.payload.metadata.profile_name, cached.role);
+  if (cached?.payload) {
+    setCapturedProfileBadge(cached.payload.metadata?.profile_name, cached.role, true);
   }
   await refreshIntervieweeDecisionState();
 }
@@ -798,7 +805,7 @@ ui.captureButton.addEventListener("click", async () => {
     }
     const normalized = normalizeCapture(response.data);
     writeSections(normalized.extracted_sections);
-    setCapturedProfileBadge(normalized.metadata.profile_name, ui.roleSelect.value);
+    setCapturedProfileBadge(normalized.metadata.profile_name, ui.roleSelect.value, true);
     setCaptureSummary(summarizeCapture(normalized));
     await withRuntimeMessage({
       type: "SAVE_LAST_CAPTURE",
