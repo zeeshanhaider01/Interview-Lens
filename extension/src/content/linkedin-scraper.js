@@ -9,7 +9,10 @@
   ];
 
   function normalizeText(value) {
-    return String(value ?? "").replace(/\s+/g, " ").trim();
+    return String(value ?? "")
+      .replace(/[\u200b\u200c\u200d\u200e\u200f\u00ad\ufeff\u034f\u115f\u1160\u17b4\u17b5\u3164]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   function getHeadingText(containerElement) {
@@ -136,6 +139,25 @@
     window.scrollTo(0, 0);
   }
 
+  function extractProfileName() {
+    // LinkedIn injects invisible characters and changes their markup frequently.
+    // Try progressively broader selectors; return the first non-empty result.
+    const selectors = [
+      ".text-heading-xlarge",
+      ".pv-text-details__left-panel h1",
+      ".ph5 h1",
+      "main h1",
+      "h1",
+    ];
+    for (const sel of selectors) {
+      const text = normalizeText(document.querySelector(sel)?.innerText ?? "");
+      if (text) {
+        return text;
+      }
+    }
+    return "";
+  }
+
   function extractLinkedInProfile() {
     const sections = {};
     for (const matcher of sectionMatchers) {
@@ -146,7 +168,7 @@
     }
 
     return {
-      profileName: normalizeText(document.querySelector("h1")?.innerText ?? ""),
+      profileName: extractProfileName(),
       profileUrl: window.location.href,
       sections,
     };
