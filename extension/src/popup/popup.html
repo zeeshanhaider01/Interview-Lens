@@ -90,10 +90,15 @@
 
       <section id="captureProfileSection">
         <h2>Capture LinkedIn Profile</h2>
-        <input type="hidden" id="roleSelect" value="INTERVIEWEE" />
-        <div class="roleToggleGroup" role="group" aria-label="Profile role">
-          <button type="button" id="roleToggleInterviewee" class="roleToggleBtn active" data-role="INTERVIEWEE">Interviewee</button>
-          <button type="button" id="roleToggleInterviewer" class="roleToggleBtn" data-role="INTERVIEWER">Interviewer</button>
+        <div role="group" aria-label="Profile role">
+          <label class="radioLabel">
+            <input id="roleInterviewee" name="roleSelect" type="radio" value="INTERVIEWEE" checked />
+            Interviewee
+          </label>
+          <label class="radioLabel">
+            <input id="roleInterviewer" name="roleSelect" type="radio" value="INTERVIEWER" />
+            Interviewer
+          </label>
         </div>
         <div id="intervieweeDecisionSection" class="hidden mt8">
           <p id="intervieweeDecisionHint" class="hintText">
