@@ -905,6 +905,8 @@ ui.submitButton.addEventListener("click", async () => {
 
 [ui.roleInterviewee, ui.roleInterviewer].forEach((radio) => {
   radio.addEventListener("change", () => {
+    writeSections({});
+    setCapturedProfileBadge(null);
     updateIntervieweeDecisionUi();
     persistPopupDraft().catch(() => {
       // Best-effort draft persistence.
