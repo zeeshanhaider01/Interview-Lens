@@ -52,10 +52,6 @@ const ui = {
   createPrepSessionButton: document.getElementById("createPrepSessionButton"),
   captureButton: document.getElementById("captureButton"),
   capturedProfileBadge: document.getElementById("capturedProfileBadge"),
-  capturedProfileAvatar: document.getElementById("capturedProfileAvatar"),
-  capturedProfileName: document.getElementById("capturedProfileName"),
-  capturedProfileRole: document.getElementById("capturedProfileRole"),
-  capturedProfileClear: document.getElementById("capturedProfileClear"),
   captureProgress: document.getElementById("captureProgress"),
   captureProgressLabel: document.getElementById("captureProgressLabel"),
   captureSummary: document.getElementById("captureSummary"),
@@ -122,24 +118,13 @@ function setCaptureSummary(message = "") {
   ui.captureSummary.classList.toggle("hidden", !summary);
 }
 
-function setCapturedProfileBadge(profileName, role, showFallback = false) {
-  // Strip invisible/zero-width Unicode characters that LinkedIn injects.
-  const name = String(profileName ?? "")
-    .replace(/[\u200b\u200c\u200d\u200e\u200f\u00ad\ufeff\u034f\u115f\u1160\u17b4\u17b5\u3164]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  // With no name and not a real-capture call, just hide the badge (used for explicit clear).
-  if (!name && !showFallback) {
+function setCapturedProfileBadge(role) {
+  if (!role) {
     ui.capturedProfileBadge.classList.add("hidden");
     return;
   }
-
-  const displayName = name || "LinkedIn Profile";
-  ui.capturedProfileAvatar.textContent = displayName.charAt(0).toUpperCase();
-  ui.capturedProfileName.textContent = displayName;
-  const roleLabel = role === PROFILE_ROLES.INTERVIEWER ? "Interviewer" : "Interviewee";
-  ui.capturedProfileRole.textContent = roleLabel;
+  const label = role === PROFILE_ROLES.INTERVIEWER ? "Interviewer" : "Interviewee";
+  ui.capturedProfileBadge.textContent = `Captured: ${label} profile`;
   ui.capturedProfileBadge.classList.remove("hidden");
 }
 
@@ -649,7 +634,7 @@ async function loadInitialState() {
   }
   writeSections(draft?.sections ?? cached?.payload?.extracted_sections ?? {});
   if (cached?.payload) {
-    setCapturedProfileBadge(cached.payload.metadata?.profile_name, cached.role, true);
+    setCapturedProfileBadge(cached.role);
   }
   await refreshIntervieweeDecisionState();
 }
@@ -779,10 +764,6 @@ ui.clearPrepSessionButton.addEventListener("click", async () => {
   }
 });
 
-ui.capturedProfileClear.addEventListener("click", () => {
-  setCapturedProfileBadge("");
-});
-
 ui.captureButton.addEventListener("click", async () => {
   const progressSteps = [
     "Starting capture...",
@@ -792,7 +773,7 @@ ui.captureButton.addEventListener("click", async () => {
   ];
   let progressIndex = 0;
   setCaptureSummary("");
-  setCapturedProfileBadge("");
+  setCapturedProfileBadge(null);
   setCaptureProgress(true, progressSteps[progressIndex]);
   const progressTimer = setInterval(() => {
     progressIndex = Math.min(progressIndex + 1, progressSteps.length - 1);
@@ -817,7 +798,7 @@ ui.captureButton.addEventListener("click", async () => {
     }
     const normalized = normalizeCapture(response.data);
     writeSections(normalized.extracted_sections);
-    setCapturedProfileBadge(normalized.metadata.profile_name, getRoleValue(), true);
+    setCapturedProfileBadge(getRoleValue());
     setCaptureSummary(summarizeCapture(normalized));
     await withRuntimeMessage({
       type: "SAVE_LAST_CAPTURE",
