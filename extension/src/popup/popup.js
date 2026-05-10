@@ -124,7 +124,7 @@ function setCapturedProfileBadge(role) {
     return;
   }
   const label = role === PROFILE_ROLES.INTERVIEWER ? "Interviewer" : "Interviewee";
-  ui.capturedProfileBadge.textContent = `Captured: ${label} profile`;
+  ui.capturedProfileBadge.textContent = `Captured: ${label} profile successfully`;
   ui.capturedProfileBadge.classList.remove("hidden");
 }
 
