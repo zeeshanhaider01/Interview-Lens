@@ -38,9 +38,8 @@ const ui = {
   prepValidationLabel: document.getElementById("prepValidationLabel"),
   activePrepBadge: document.getElementById("activePrepBadge"),
   activePrepBadgeValue: document.getElementById("activePrepBadgeValue"),
-  roleSelect: document.getElementById("roleSelect"),
-  roleToggleInterviewee: document.getElementById("roleToggleInterviewee"),
-  roleToggleInterviewer: document.getElementById("roleToggleInterviewer"),
+  roleInterviewee: document.getElementById("roleInterviewee"),
+  roleInterviewer: document.getElementById("roleInterviewer"),
   intervieweeDecisionSection: document.getElementById("intervieweeDecisionSection"),
   intervieweeDecisionHint: document.getElementById("intervieweeDecisionHint"),
   intervieweeChoiceReuse: document.getElementById("intervieweeChoiceReuse"),
@@ -144,11 +143,14 @@ function setCapturedProfileBadge(profileName, role, showFallback = false) {
   ui.capturedProfileBadge.classList.remove("hidden");
 }
 
-function setRoleToggle(role) {
-  const value = Object.values(PROFILE_ROLES).includes(role) ? role : PROFILE_ROLES.INTERVIEWEE;
-  ui.roleSelect.value = value;
-  ui.roleToggleInterviewee.classList.toggle("active", value === PROFILE_ROLES.INTERVIEWEE);
-  ui.roleToggleInterviewer.classList.toggle("active", value === PROFILE_ROLES.INTERVIEWER);
+function getRoleValue() {
+  return ui.roleInterviewer.checked ? PROFILE_ROLES.INTERVIEWER : PROFILE_ROLES.INTERVIEWEE;
+}
+
+function setRoleValue(role) {
+  const isInterviewer = role === PROFILE_ROLES.INTERVIEWER;
+  ui.roleInterviewee.checked = !isInterviewer;
+  ui.roleInterviewer.checked = isInterviewer;
   updateIntervieweeDecisionUi();
 }
 
@@ -320,7 +322,7 @@ function summarizeCapture(normalizedCapture) {
 function buildPopupDraft() {
   return {
     prepId: ui.prepIdInput.value.trim(),
-    role: ui.roleSelect.value,
+    role: getRoleValue(),
     intervieweeChoice: getIntervieweeChoice(),
     uploadScope: getIntervieweeUploadScope(),
     sections: readEditedSections(),
@@ -479,7 +481,7 @@ function getIntervieweeUploadScope() {
 }
 
 function updateIntervieweeDecisionUi() {
-  const isInterviewee = ui.roleSelect.value === PROFILE_ROLES.INTERVIEWEE;
+  const isInterviewee = getRoleValue() === PROFILE_ROLES.INTERVIEWEE;
   ui.intervieweeDecisionSection.classList.toggle("hidden", !isInterviewee);
   const choice = getIntervieweeChoice();
   ui.intervieweeUploadScopeSection.classList.toggle(
@@ -533,7 +535,7 @@ function resetPopupFormAfterLogout() {
   ui.prepIdInput.value = "";
   setDashboardCtaUrl("");
   setActivePrepBadge("");
-  setRoleToggle(PROFILE_ROLES.INTERVIEWEE);
+  setRoleValue(PROFILE_ROLES.INTERVIEWEE);
   ui.intervieweeChoiceReuse.checked = true;
   ui.intervieweeChoiceUpload.checked = false;
   ui.uploadScopeSessionOnly.checked = true;
@@ -633,9 +635,9 @@ async function loadInitialState() {
     setActivePrepBadge(cached.prepId);
   }
   if (draft?.role && Object.values(PROFILE_ROLES).includes(draft.role)) {
-    setRoleToggle(draft.role);
+    setRoleValue(draft.role);
   } else if (cached?.role && Object.values(PROFILE_ROLES).includes(cached.role)) {
-    setRoleToggle(cached.role);
+    setRoleValue(cached.role);
   }
   if (draft?.intervieweeChoice === INTERVIEWEE_PROFILE_CHOICES.UPLOAD_NEW) {
     ui.intervieweeChoiceUpload.checked = true;
@@ -798,7 +800,7 @@ ui.captureButton.addEventListener("click", async () => {
   }, 600);
   try {
     if (
-      ui.roleSelect.value === PROFILE_ROLES.INTERVIEWEE &&
+      getRoleValue() === PROFILE_ROLES.INTERVIEWEE &&
       getIntervieweeChoice() === INTERVIEWEE_PROFILE_CHOICES.REUSE_SAVED
     ) {
       throw new Error("Reuse mode does not require capture. Switch to upload mode to capture a new interviewee profile.");
@@ -815,13 +817,13 @@ ui.captureButton.addEventListener("click", async () => {
     }
     const normalized = normalizeCapture(response.data);
     writeSections(normalized.extracted_sections);
-    setCapturedProfileBadge(normalized.metadata.profile_name, ui.roleSelect.value, true);
+    setCapturedProfileBadge(normalized.metadata.profile_name, getRoleValue(), true);
     setCaptureSummary(summarizeCapture(normalized));
     await withRuntimeMessage({
       type: "SAVE_LAST_CAPTURE",
       payload: {
         prepId: ui.prepIdInput.value.trim(),
-        role: ui.roleSelect.value,
+        role: getRoleValue(),
         payload: normalized,
       },
     });
@@ -842,7 +844,7 @@ ui.submitButton.addEventListener("click", async () => {
       throw new Error("Login required before submit.");
     }
     const prepId = ui.prepIdInput.value.trim();
-    const role = ui.roleSelect.value;
+    const role = getRoleValue();
     if (!prepId) {
       throw new Error("prep_id is required before submit.");
     }
@@ -920,9 +922,9 @@ ui.submitButton.addEventListener("click", async () => {
   }
 });
 
-[ui.roleToggleInterviewee, ui.roleToggleInterviewer].forEach((btn) => {
-  btn.addEventListener("click", () => {
-    setRoleToggle(btn.dataset.role);
+[ui.roleInterviewee, ui.roleInterviewer].forEach((radio) => {
+  radio.addEventListener("change", () => {
+    updateIntervieweeDecisionUi();
     persistPopupDraft().catch(() => {
       // Best-effort draft persistence.
     });
