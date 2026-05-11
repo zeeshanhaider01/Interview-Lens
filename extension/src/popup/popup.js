@@ -59,6 +59,7 @@ const ui = {
   dashboardCtaSection: document.getElementById("dashboardCtaSection"),
   openDashboardButton: document.getElementById("openDashboardButton"),
   statusMessage: document.getElementById("statusMessage"),
+  profileNameField: document.getElementById("profileNameField"),
   fields: {
     experience: document.getElementById("experienceField"),
     education: document.getElementById("educationField"),
@@ -310,6 +311,7 @@ function buildPopupDraft() {
     role: getRoleValue(),
     intervieweeChoice: getIntervieweeChoice(),
     uploadScope: getIntervieweeUploadScope(),
+    profileName: ui.profileNameField.value.trim(),
     sections: readEditedSections(),
     updatedAt: Date.now(),
   };
@@ -525,6 +527,7 @@ function resetPopupFormAfterLogout() {
   ui.intervieweeChoiceUpload.checked = false;
   ui.uploadScopeSessionOnly.checked = true;
   ui.uploadScopeDefault.checked = false;
+  ui.profileNameField.value = "";
   writeSections({});
   clearLocalPopupDraft();
 }
@@ -633,6 +636,8 @@ async function loadInitialState() {
     ui.uploadScopeSessionOnly.checked = false;
   }
   writeSections(draft?.sections ?? cached?.payload?.extracted_sections ?? {});
+  ui.profileNameField.value =
+    draft?.profileName ?? cached?.payload?.metadata?.profile_name ?? "";
   if (cached?.payload) {
     setCapturedProfileBadge(cached.role);
   }
@@ -798,6 +803,7 @@ ui.captureButton.addEventListener("click", async () => {
     }
     const normalized = normalizeCapture(response.data);
     writeSections(normalized.extracted_sections);
+    ui.profileNameField.value = normalized.metadata?.profile_name ?? "";
     setCapturedProfileBadge(getRoleValue());
     setCaptureSummary(summarizeCapture(normalized));
     await withRuntimeMessage({
@@ -862,6 +868,7 @@ ui.submitButton.addEventListener("click", async () => {
       },
       metadata: {
         submitted_from: "chrome_extension",
+        profile_name: ui.profileNameField.value.trim(),
       },
     };
 
@@ -906,6 +913,7 @@ ui.submitButton.addEventListener("click", async () => {
 [ui.roleInterviewee, ui.roleInterviewer].forEach((radio) => {
   radio.addEventListener("change", () => {
     writeSections({});
+    ui.profileNameField.value = "";
     setCapturedProfileBadge(null);
     updateIntervieweeDecisionUi();
     persistPopupDraft().catch(() => {
@@ -941,6 +949,7 @@ ui.uploadScopeDefault.addEventListener("change", () => {
 
 [
   ui.prepIdInput,
+  ui.profileNameField,
   ...Object.values(ui.fields),
 ]
   .filter(Boolean)
