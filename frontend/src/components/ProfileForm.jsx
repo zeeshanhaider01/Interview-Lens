@@ -48,6 +48,27 @@ function rowStatusVariant(rowStatus) {
   }
 }
 
+function formatRelativeTime(isoString) {
+  if (!isoString) return null
+  const diff = Date.now() - new Date(isoString).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} minute${mins !== 1 ? 's' : ''} ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`
+  const days = Math.floor(hours / 24)
+  return `${days} day${days !== 1 ? 's' : ''} ago`
+}
+
+function RefreshIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16">
+      <path fillRule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z" />
+      <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z" />
+    </svg>
+  )
+}
+
 export default function ProfileForm() {
   const [form, setForm] = useState({
     interviewee: { name: '', email: '', education: '', experience: '' },
@@ -84,6 +105,7 @@ export default function ProfileForm() {
   const [predictionLoading, setPredictionLoading] = useState(false)
   const [predictionPollRefreshing, setPredictionPollRefreshing] = useState(false)
   const [predictionError, setPredictionError] = useState(null)
+
   const [intervieweeDecision, setIntervieweeDecision] = useState('reuse_saved')
   const [intervieweeUploadScope, setIntervieweeUploadScope] = useState('session_only')
   const [prepIdCopied, setPrepIdCopied] = useState(false)
@@ -369,324 +391,405 @@ export default function ProfileForm() {
     }
   }
 
+
   return (
-    <div className="container my-4">
+    <div className="container-fluid px-3 px-lg-4 my-4">
       <Alert variant="info" className="shadow-sm">
         <div className="fw-semibold">Interview Lens Dashboard</div>
         <div className="small">
-          Choose a prep session below to view generated prep. You can also submit profiles manually at the bottom.
+          Choose a prep session on the left to view generated prep. You can also submit profiles manually at the bottom.
         </div>
       </Alert>
 
-      <Card className="shadow-sm mb-4">
-        <Card.Header className="bg-white d-flex flex-wrap align-items-center justify-content-between gap-2">
-          <h4 className="mb-0 text-primary">Prep sessions</h4>
-          <Button variant="outline-primary" size="sm" onClick={() => loadSessions()} disabled={sessionsLoading} className="d-flex align-items-center gap-1">
-            {sessionsLoading ? (
-              <Spinner animation="border" size="sm" />
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
-                <path fillRule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
-                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
-              </svg>
-            )}
-            Refresh list
-          </Button>
-        </Card.Header>
-        <Card.Body>
-          <Form onSubmit={createSession} className="mb-3">
-            <Row className="g-2 align-items-end">
-              <Col md={4}>
-                <Form.Group>
-                  <Form.Label className="small mb-1">Title</Form.Label>
+      {/* ── Two-panel workspace ── */}
+      <div
+        className="d-flex border rounded shadow-sm overflow-hidden mb-4"
+        style={{ height: 'calc(100vh - 160px)' }}
+      >
+        {/* ── LEFT PANEL: Session list ── */}
+        <div
+          style={{
+            width: '360px',
+            minWidth: '240px',
+            flexShrink: 0,
+            borderRight: '1px solid #dee2e6',
+            overflowY: 'auto',
+            background: '#f8f9fa',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {/* Panel header */}
+          <div className="d-flex align-items-center justify-content-between px-3 py-2 border-bottom bg-white" style={{ flexShrink: 0 }}>
+            <h6 className="mb-0 text-primary fw-bold text-uppercase" style={{ letterSpacing: '0.04em', fontSize: '0.78rem' }}>
+              Prep Sessions
+            </h6>
+            <Button
+              variant="outline-primary"
+              size="sm"
+              onClick={() => loadSessions()}
+              disabled={sessionsLoading}
+              className="d-flex align-items-center gap-1 py-1"
+            >
+              {sessionsLoading ? <Spinner animation="border" size="sm" /> : <RefreshIcon />}
+              <span style={{ fontSize: '0.78rem' }}>Refresh</span>
+            </Button>
+          </div>
+
+          {/* Create form */}
+          <div className="px-3 pt-3 pb-2 border-bottom bg-white" style={{ flexShrink: 0 }}>
+            <Form onSubmit={createSession}>
+              <Row className="g-2">
+                <Col xs={12}>
                   <Form.Control
+                    size="sm"
                     value={createTitle}
                     onChange={(e) => setCreateTitle(e.target.value)}
                     placeholder="e.g. Senior Backend Engineer"
                     maxLength={200}
                   />
-                </Form.Group>
-              </Col>
-              <Col md={4}>
-                <Form.Group>
-                  <Form.Label className="small mb-1">Company</Form.Label>
+                </Col>
+                <Col xs={12}>
                   <Form.Control
+                    size="sm"
                     value={createCompanyName}
                     onChange={(e) => setCreateCompanyName(e.target.value)}
                     placeholder="e.g. Acme"
                     maxLength={200}
                   />
-                </Form.Group>
-              </Col>
-              <Col md={4} className="d-flex gap-2">
-                <Button type="submit" disabled={createLoading}>
-                  {createLoading ? (
-                    <>
-                      <Spinner animation="border" size="sm" className="me-2" />
-                      Creating…
-                    </>
-                  ) : (
-                    'Create prep session'
-                  )}
-                </Button>
-              </Col>
-            </Row>
-            {createError && <Alert variant="danger" className="mt-2 mb-0 py-2">{String(createError)}</Alert>}
-          </Form>
-
-          <FormControl
-            type="search"
-            placeholder="Filter by title, company, or ID…"
-            className="mb-3"
-            value={sessionFilter}
-            onChange={(e) => setSessionFilter(e.target.value)}
-          />
-          {sessionsLoading && (
-            <div className="text-muted py-3">
-              <Spinner animation="border" size="sm" className="me-2" />
-              Loading sessions…
-            </div>
-          )}
-          {sessionsError && <Alert variant="danger">{String(sessionsError)}</Alert>}
-          {!sessionsLoading && !sessions.length && !sessionsError && (
-            <p className="text-secondary mb-0">
-              No prep sessions yet. Create one from the browser extension or use manual submission below after you add sessions via the API.
-            </p>
-          )}
-          {!sessionsLoading && filteredSessions.length > 0 && (
-            <ListGroup variant="flush">
-              {filteredSessions.map((s) => {
-                const active = s.prep_id === selectedPrepId
-                return (
-                  <ListGroup.Item
-                    key={s.prep_id}
-                    action
-                    active={active}
-                    onClick={() => selectSession(s.prep_id)}
-                    className={s.is_latest ? 'border border-success border-2 rounded mb-1' : ''}
-                  >
-                    <div className="d-flex justify-content-between align-items-start gap-2 flex-wrap">
-                      <div>
-                        <div className="fw-semibold">{formatSessionPrimaryLabel(s)}</div>
-                        <div className="small text-muted font-monospace">ID …{s.prep_id.slice(-12)}</div>
-                        {s.is_latest && (
-                          <Badge bg="success" className="mt-1">
-                            Latest
-                          </Badge>
-                        )}
-                      </div>
-                      <Badge bg={rowStatusVariant(s.row_status)} text={s.row_status === 'generating' ? 'dark' : undefined}>
-                        {rowStatusLabel(s.row_status)}
-                      </Badge>
-                    </div>
-                  </ListGroup.Item>
-                )
-              })}
-            </ListGroup>
-          )}
-        </Card.Body>
-      </Card>
-
-      {selectedPrepId && (
-        <Card className="shadow-sm mb-4">
-          <Card.Header className="bg-primary text-white">
-            <h5 className="mb-0">Prep results</h5>
-            {selectedSession && (
-              <div className="small opacity-90 mt-1">{formatSessionPrimaryLabel(selectedSession)}</div>
-            )}
-          </Card.Header>
-          <Card.Body>
-            <Card className="mb-3">
-              <Card.Body>
-                <div className="d-flex justify-content-between align-items-center mb-2">
-                  <h6 className="mb-0">Session settings</h6>
-                  {sessionDetail?.status && (
-                    <Badge bg={sessionDetail.status === 'CLOSED' ? 'secondary' : 'success'}>
-                      {sessionDetail.status}
-                    </Badge>
-                  )}
-                </div>
-                {sessionDetailLoading && (
-                  <div className="small text-muted mb-2">
-                    <Spinner animation="border" size="sm" className="me-2" />
-                    Loading session details…
-                  </div>
-                )}
-                {sessionDetailError && <Alert variant="danger" className="py-2">{sessionDetailError}</Alert>}
-                {archiveError && <Alert variant="danger" className="py-2">{archiveError}</Alert>}
-                <Form onSubmit={updateSession}>
-                  <Row className="g-2">
-                    <Col md={4}>
-                      <Form.Group>
-                        <Form.Label className="small mb-1">Title</Form.Label>
-                        <Form.Control
-                          value={editTitle}
-                          onChange={(e) => setEditTitle(e.target.value)}
-                          maxLength={200}
-                        />
-                      </Form.Group>
-                    </Col>
-                    <Col md={4}>
-                      <Form.Group>
-                        <Form.Label className="small mb-1">Company</Form.Label>
-                        <Form.Control
-                          value={editCompanyName}
-                          onChange={(e) => setEditCompanyName(e.target.value)}
-                          maxLength={200}
-                        />
-                      </Form.Group>
-                    </Col>
-                    <Col md={4}>
-                      <Form.Group>
-                        <Form.Label className="small mb-1">Status</Form.Label>
-                        <Form.Select value={editStatus} onChange={(e) => setEditStatus(e.target.value)}>
-                          <option value="ACTIVE">ACTIVE</option>
-                          <option value="CLOSED">CLOSED</option>
-                        </Form.Select>
-                      </Form.Group>
-                    </Col>
-                  </Row>
-                  <div className="mt-3 d-flex gap-2">
-                    <Button type="submit" variant="outline-primary" disabled={editLoading || !selectedPrepId}>
-                      {editLoading ? 'Saving…' : 'Save session'}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline-danger"
-                      disabled={archiveLoading || !selectedPrepId}
-                      onClick={archiveSession}
-                    >
-                      {archiveLoading ? 'Archiving…' : 'Archive session'}
-                    </Button>
-                  </div>
-                  {editError && <Alert variant="danger" className="mt-2 mb-0 py-2">{editError}</Alert>}
-                </Form>
-                <hr />
-                <div className="small">
-                  <div className="fw-semibold mb-1">Interviewee profile decision for this session</div>
-                  {hasDefaultIntervieweeProfile ? (
-                    <>
-                      <Form.Check
-                        type="radio"
-                        id="decisionReuse"
-                        name="intervieweeDecision"
-                        label="Use saved profile"
-                        checked={intervieweeDecision === 'reuse_saved'}
-                        onChange={() => setIntervieweeDecision('reuse_saved')}
-                      />
-                      <Form.Check
-                        type="radio"
-                        id="decisionUpload"
-                        name="intervieweeDecision"
-                        label="Upload new profile"
-                        checked={intervieweeDecision === 'upload_new'}
-                        onChange={() => setIntervieweeDecision('upload_new')}
-                      />
-                    </>
-                  ) : (
-                    <Alert variant="secondary" className="py-2 mb-2">
-                      No default interviewee profile found yet. Upload a new interviewee profile from the extension.
-                    </Alert>
-                  )}
-                  {intervieweeDecision === 'upload_new' && (
-                    <div className="ms-3 mt-2">
-                      <Form.Check
-                        type="radio"
-                        id="scopeSessionOnly"
-                        name="intervieweeUploadScope"
-                        label="Use only for this session"
-                        checked={intervieweeUploadScope === 'session_only'}
-                        onChange={() => setIntervieweeUploadScope('session_only')}
-                      />
-                      <Form.Check
-                        type="radio"
-                        id="scopeSaveDefault"
-                        name="intervieweeUploadScope"
-                        label="Save as default profile"
-                        checked={intervieweeUploadScope === 'save_as_default'}
-                        onChange={() => setIntervieweeUploadScope('save_as_default')}
-                      />
-                    </div>
-                  )}
-                </div>
-                <hr />
-                <div className="small">
-                  <div className="fw-semibold mb-2">Use browser extension for profile upload</div>
-                  <div className="d-flex align-items-center gap-2 mb-2 flex-wrap">
-                    <Form.Control value={selectedPrepId} readOnly className="font-monospace" />
-                    <Button size="sm" variant={prepIdCopied ? 'success' : 'outline-primary'} onClick={copyPrepId}>
-                      {prepIdCopied ? 'Copied' : 'Copy prep_id'}
-                    </Button>
-                    {extensionOpenUrl && (
-                      <Button
-                        size="sm"
-                        variant="outline-secondary"
-                        onClick={() => window.open(extensionOpenUrl, '_blank', 'noopener,noreferrer')}
-                      >
-                        Open extension
-                      </Button>
+                </Col>
+                <Col xs={12}>
+                  <Button type="submit" size="sm" className="w-100" disabled={createLoading}>
+                    {createLoading ? (
+                      <>
+                        <Spinner animation="border" size="sm" className="me-1" />
+                        Creating…
+                      </>
+                    ) : (
+                      '+ Create prep session'
                     )}
-                  </div>
-                  <ol className="mb-2 ps-3">
-                    <li>Open the Interview Lens extension popup.</li>
-                    <li>Paste the copied prep_id.</li>
-                    <li>Select role and choose reuse/upload option.</li>
-                    <li>Capture LinkedIn data and submit.</li>
-                  </ol>
-                  {extensionOpenUrl && (
-                    <div className="text-muted">
-                      If the extension does not open directly, click browser Extensions icon and choose Interview Lens.
-                    </div>
-                  )}
-                </div>
-              </Card.Body>
-            </Card>
+                  </Button>
+                </Col>
+              </Row>
+              {createError && (
+                <Alert variant="danger" className="mt-2 mb-0 py-1 small">
+                  {String(createError)}
+                </Alert>
+              )}
+            </Form>
+          </div>
 
-            {predictionLoading && (
-              <div className="text-muted">
+          {/* Filter */}
+          <div className="px-3 pt-2 pb-1" style={{ flexShrink: 0 }}>
+            <FormControl
+              type="search"
+              size="sm"
+              placeholder="Filter by title, company, or ID…"
+              value={sessionFilter}
+              onChange={(e) => setSessionFilter(e.target.value)}
+            />
+          </div>
+
+          {/* Session list */}
+          <div className="px-2 py-1" style={{ overflowY: 'auto', flex: 1 }}>
+            {sessionsLoading && (
+              <div className="text-muted py-3 px-2 small">
                 <Spinner animation="border" size="sm" className="me-2" />
-                Loading…
+                Loading sessions…
               </div>
             )}
-            {predictionError && <Alert variant="danger">{predictionError}</Alert>}
-            {predictionPollRefreshing && !predictionLoading && (
-              <div className="small text-muted mb-2">Updating…</div>
+            {sessionsError && (
+              <Alert variant="danger" className="mx-2 mt-2 small py-2">
+                {String(sessionsError)}
+              </Alert>
             )}
-            {predictionData && !predictionLoading && (
-              <>
-                {predictionData.pipeline_status === 'WAITING_FOR_COUNTERPART_PROFILE' && (
-                  <Alert variant="secondary" className="mb-0">
-                    {predictionData?.has_interviewee_profile && !predictionData?.has_interviewer_profile
-                      ? 'Interviewee profile is ready. Submit interviewer profile from the extension.'
-                      : !predictionData?.has_interviewee_profile && predictionData?.has_interviewer_profile
-                        ? 'Interviewer profile is ready. Submit interviewee profile from the extension.'
-                        : 'Waiting for both interviewee and interviewer profiles for this session. Submit the missing profile from the extension.'}
-                  </Alert>
-                )}
-                {predictionData.pipeline_status === 'READY_FOR_TOPIC_GENERATION' &&
-                  predictionData.prediction?.status === 'COMPLETED' &&
-                  predictionData.prediction?.result?.html && (
-                    <div className="prose" dangerouslySetInnerHTML={{ __html: predictionData.prediction.result.html }} />
-                  )}
-                {predictionData.pipeline_status === 'READY_FOR_TOPIC_GENERATION' &&
-                  (predictionData.prediction?.status === 'RUNNING' ||
-                    predictionData.prediction?.status === 'NOT_STARTED') && (
-                    <Alert variant="warning" className="mb-0">
-                      Generating your interview prep… This page will update automatically.
-                    </Alert>
-                  )}
-                {predictionData.pipeline_status === 'READY_FOR_TOPIC_GENERATION' &&
-                  predictionData.prediction?.status === 'FAILED' && (
-                    <Alert variant="danger" className="mb-0">
-                      {predictionData.prediction?.error || 'Generation failed. Try again later.'}
-                    </Alert>
-                  )}
-              </>
+            {!sessionsLoading && !sessions.length && !sessionsError && (
+              <p className="text-secondary mb-0 px-2 py-3 small">
+                No prep sessions yet. Create one above or use the browser extension.
+              </p>
             )}
-          </Card.Body>
-        </Card>
-      )}
+            {!sessionsLoading && filteredSessions.length > 0 && (
+              <ListGroup variant="flush">
+                {filteredSessions.map((s) => {
+                  const active = s.prep_id === selectedPrepId
+                  return (
+                    <ListGroup.Item
+                      key={s.prep_id}
+                      action
+                      active={active}
+                      onClick={() => selectSession(s.prep_id)}
+                      className={`rounded mb-1 ${s.is_latest && !active ? 'border border-success border-2' : ''}`}
+                    >
+                      <div className="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                        <div style={{ minWidth: 0 }}>
+                          <div className="fw-semibold text-truncate" style={{ fontSize: '0.82rem' }}>
+                            {formatSessionPrimaryLabel(s)}
+                          </div>
+                          <div className="text-muted font-monospace" style={{ fontSize: '0.7rem' }}>
+                            ID …{s.prep_id.slice(-12)}
+                          </div>
+                          {s.is_latest && (
+                            <Badge bg="success" className="mt-1" style={{ fontSize: '0.65rem' }}>
+                              Latest
+                            </Badge>
+                          )}
+                        </div>
+                        <Badge
+                          bg={rowStatusVariant(s.row_status)}
+                          text={s.row_status === 'generating' ? 'dark' : undefined}
+                          style={{ fontSize: '0.65rem', whiteSpace: 'normal', textAlign: 'right' }}
+                        >
+                          {rowStatusLabel(s.row_status)}
+                        </Badge>
+                      </div>
+                    </ListGroup.Item>
+                  )
+                })}
+              </ListGroup>
+            )}
+          </div>
+        </div>
 
+        {/* ── RIGHT PANEL: Prep Results ── */}
+        <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', background: '#fff' }}>
+          {!selectedPrepId ? (
+            <div className="d-flex align-items-center justify-content-center h-100 text-muted">
+              <div className="text-center p-4">
+                <div className="mb-3" style={{ fontSize: '2.5rem' }}>📋</div>
+                <div className="fw-semibold">No session selected</div>
+                <div className="small mt-1">Select a session from the left to view prep results.</div>
+              </div>
+            </div>
+          ) : (
+            <div className="p-3">
+              {/* Right panel header */}
+              <div className="mb-3 pb-3 border-bottom">
+                <h5 className="mb-0 text-primary text-truncate">
+                  {selectedSession ? formatSessionPrimaryLabel(selectedSession) : '…'}
+                </h5>
+              </div>
+
+              {/* Session settings */}
+              <Card className="mb-3">
+                <Card.Body>
+                  <div className="d-flex justify-content-between align-items-center mb-2">
+                    <h6 className="mb-0">Session settings</h6>
+                    {sessionDetail?.status && (
+                      <Badge bg={sessionDetail.status === 'CLOSED' ? 'secondary' : 'success'}>
+                        {sessionDetail.status}
+                      </Badge>
+                    )}
+                  </div>
+                  {sessionDetailLoading && (
+                    <div className="small text-muted mb-2">
+                      <Spinner animation="border" size="sm" className="me-2" />
+                      Loading session details…
+                    </div>
+                  )}
+                  {sessionDetailError && (
+                    <Alert variant="danger" className="py-2">
+                      {sessionDetailError}
+                    </Alert>
+                  )}
+                  {archiveError && (
+                    <Alert variant="danger" className="py-2">
+                      {archiveError}
+                    </Alert>
+                  )}
+                  <Form onSubmit={updateSession}>
+                    <Row className="g-2">
+                      <Col md={4}>
+                        <Form.Group>
+                          <Form.Label className="small mb-1">Title</Form.Label>
+                          <Form.Control
+                            value={editTitle}
+                            onChange={(e) => setEditTitle(e.target.value)}
+                            maxLength={200}
+                          />
+                        </Form.Group>
+                      </Col>
+                      <Col md={4}>
+                        <Form.Group>
+                          <Form.Label className="small mb-1">Company</Form.Label>
+                          <Form.Control
+                            value={editCompanyName}
+                            onChange={(e) => setEditCompanyName(e.target.value)}
+                            maxLength={200}
+                          />
+                        </Form.Group>
+                      </Col>
+                      <Col md={4}>
+                        <Form.Group>
+                          <Form.Label className="small mb-1">Status</Form.Label>
+                          <Form.Select
+                            value={editStatus}
+                            onChange={(e) => setEditStatus(e.target.value)}
+                          >
+                            <option value="ACTIVE">ACTIVE</option>
+                            <option value="CLOSED">CLOSED</option>
+                          </Form.Select>
+                        </Form.Group>
+                      </Col>
+                    </Row>
+                    <div className="mt-3 d-flex gap-2">
+                      <Button
+                        type="submit"
+                        variant="outline-primary"
+                        disabled={editLoading || !selectedPrepId}
+                      >
+                        {editLoading ? 'Saving…' : 'Save session'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline-danger"
+                        disabled={archiveLoading || !selectedPrepId}
+                        onClick={archiveSession}
+                      >
+                        {archiveLoading ? 'Archiving…' : 'Archive session'}
+                      </Button>
+                    </div>
+                    {editError && (
+                      <Alert variant="danger" className="mt-2 mb-0 py-2">
+                        {editError}
+                      </Alert>
+                    )}
+                  </Form>
+                  <hr />
+                  <div className="small">
+                    <div className="fw-semibold mb-1">Interviewee profile decision for this session</div>
+                    {hasDefaultIntervieweeProfile ? (
+                      <>
+                        <Form.Check
+                          type="radio"
+                          id="decisionReuse"
+                          name="intervieweeDecision"
+                          label="Use saved profile"
+                          checked={intervieweeDecision === 'reuse_saved'}
+                          onChange={() => setIntervieweeDecision('reuse_saved')}
+                        />
+                        <Form.Check
+                          type="radio"
+                          id="decisionUpload"
+                          name="intervieweeDecision"
+                          label="Upload new profile"
+                          checked={intervieweeDecision === 'upload_new'}
+                          onChange={() => setIntervieweeDecision('upload_new')}
+                        />
+                      </>
+                    ) : (
+                      <Alert variant="secondary" className="py-2 mb-2">
+                        No default interviewee profile found yet. Upload a new interviewee profile from the extension.
+                      </Alert>
+                    )}
+                    {intervieweeDecision === 'upload_new' && (
+                      <div className="ms-3 mt-2">
+                        <Form.Check
+                          type="radio"
+                          id="scopeSessionOnly"
+                          name="intervieweeUploadScope"
+                          label="Use only for this session"
+                          checked={intervieweeUploadScope === 'session_only'}
+                          onChange={() => setIntervieweeUploadScope('session_only')}
+                        />
+                        <Form.Check
+                          type="radio"
+                          id="scopeSaveDefault"
+                          name="intervieweeUploadScope"
+                          label="Save as default profile"
+                          checked={intervieweeUploadScope === 'save_as_default'}
+                          onChange={() => setIntervieweeUploadScope('save_as_default')}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <hr />
+                  <div className="small">
+                    <div className="fw-semibold mb-2">Use browser extension for profile upload</div>
+                    <div className="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                      <Form.Control value={selectedPrepId} readOnly className="font-monospace" />
+                      <Button
+                        size="sm"
+                        variant={prepIdCopied ? 'success' : 'outline-primary'}
+                        onClick={copyPrepId}
+                      >
+                        {prepIdCopied ? 'Copied' : 'Copy prep_id'}
+                      </Button>
+                      {extensionOpenUrl && (
+                        <Button
+                          size="sm"
+                          variant="outline-secondary"
+                          onClick={() => window.open(extensionOpenUrl, '_blank', 'noopener,noreferrer')}
+                        >
+                          Open extension
+                        </Button>
+                      )}
+                    </div>
+                    <ol className="mb-2 ps-3">
+                      <li>Open the Interview Lens extension popup.</li>
+                      <li>Paste the copied prep_id.</li>
+                      <li>Select role and choose reuse/upload option.</li>
+                      <li>Capture LinkedIn data and submit.</li>
+                    </ol>
+                    {extensionOpenUrl && (
+                      <div className="text-muted">
+                        If the extension does not open directly, click browser Extensions icon and choose Interview Lens.
+                      </div>
+                    )}
+                  </div>
+                </Card.Body>
+              </Card>
+
+              {/* Prediction results */}
+              {predictionLoading && (
+                <div className="text-muted">
+                  <Spinner animation="border" size="sm" className="me-2" />
+                  Loading…
+                </div>
+              )}
+              {predictionError && <Alert variant="danger">{predictionError}</Alert>}
+              {predictionPollRefreshing && !predictionLoading && (
+                <div className="small text-muted mb-2">Updating…</div>
+              )}
+              {predictionData && !predictionLoading && (
+                <>
+                  {predictionData.pipeline_status === 'WAITING_FOR_COUNTERPART_PROFILE' && (
+                    <Alert variant="secondary" className="mb-0">
+                      {predictionData?.has_interviewee_profile && !predictionData?.has_interviewer_profile
+                        ? 'Interviewee profile is ready. Submit interviewer profile from the extension.'
+                        : !predictionData?.has_interviewee_profile && predictionData?.has_interviewer_profile
+                          ? 'Interviewer profile is ready. Submit interviewee profile from the extension.'
+                          : 'Waiting for both interviewee and interviewer profiles for this session. Submit the missing profile from the extension.'}
+                    </Alert>
+                  )}
+                  {predictionData.pipeline_status === 'READY_FOR_TOPIC_GENERATION' &&
+                    predictionData.prediction?.status === 'COMPLETED' &&
+                    predictionData.prediction?.result?.html && (
+                      <div
+                        className="prose"
+                        dangerouslySetInnerHTML={{ __html: predictionData.prediction.result.html }}
+                      />
+                    )}
+                  {predictionData.pipeline_status === 'READY_FOR_TOPIC_GENERATION' &&
+                    (predictionData.prediction?.status === 'RUNNING' ||
+                      predictionData.prediction?.status === 'NOT_STARTED') && (
+                      <Alert variant="warning" className="mb-0">
+                        Generating your interview prep… This page will update automatically.
+                      </Alert>
+                    )}
+                  {predictionData.pipeline_status === 'READY_FOR_TOPIC_GENERATION' &&
+                    predictionData.prediction?.status === 'FAILED' && (
+                      <Alert variant="danger" className="mb-0">
+                        {predictionData.prediction?.error || 'Generation failed. Try again later.'}
+                      </Alert>
+                    )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Manual submission (full width below panels) ── */}
       <Card className="shadow-sm">
         <Card.Header className="bg-white">
           <h4 className="mb-0 text-primary">Manual profile submission</h4>
