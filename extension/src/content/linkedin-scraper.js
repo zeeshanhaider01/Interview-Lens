@@ -143,18 +143,30 @@
     // LinkedIn injects invisible characters and changes their markup frequently.
     // Try progressively broader selectors; return the first non-empty result.
     const selectors = [
+      // Current LinkedIn markup (2025+)
+      "h1.text-heading-xlarge",
       ".text-heading-xlarge",
+      // Older LinkedIn class names kept as fallbacks
       ".pv-text-details__left-panel h1",
       ".ph5 h1",
+      // Semantic fallbacks — broad but reliable when classes change
       "main h1",
+      "article h1",
       "h1",
     ];
     for (const sel of selectors) {
-      const text = normalizeText(document.querySelector(sel)?.innerText ?? "");
+      const el = document.querySelector(sel);
+      if (!el) {
+        continue;
+      }
+      // Use textContent as well as innerText: innerText returns "" for hidden
+      // elements, textContent still contains the raw text.
+      const text = normalizeText(el.innerText || el.textContent || "");
       if (text) {
         return text;
       }
     }
+
     return "";
   }
 
