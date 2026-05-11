@@ -105,6 +105,7 @@ export default function ProfileForm() {
   const [predictionLoading, setPredictionLoading] = useState(false)
   const [predictionPollRefreshing, setPredictionPollRefreshing] = useState(false)
   const [predictionError, setPredictionError] = useState(null)
+  const [predictionRefreshKey, setPredictionRefreshKey] = useState(0)
 
   const [intervieweeDecision, setIntervieweeDecision] = useState('reuse_saved')
   const [intervieweeUploadScope, setIntervieweeUploadScope] = useState('session_only')
@@ -273,7 +274,13 @@ export default function ProfileForm() {
       cancelled = true
       if (pollTimer) clearTimeout(pollTimer)
     }
-  }, [selectedPrepId, apiBase, getToken])
+  // predictionRefreshKey in deps allows manual re-trigger: incrementing it
+  // causes the cleanup to cancel any pending poll and starts a fresh fetch.
+  }, [selectedPrepId, apiBase, getToken, predictionRefreshKey])
+
+  const manualRefreshPrediction = useCallback(() => {
+    setPredictionRefreshKey((k) => k + 1)
+  }, [])
 
   const onChange = (e, section, field) => {
     setForm((prev) => ({
@@ -299,6 +306,22 @@ export default function ProfileForm() {
       setManualLoading(false)
     }
   }
+
+  // People names sourced from profile_submissions returned by the session detail API
+  const intervieweeSubmission = sessionDetail?.profile_submissions?.find((s) => s.role === 'INTERVIEWEE')
+  const interviewerSubmission = sessionDetail?.profile_submissions?.find((s) => s.role === 'INTERVIEWER')
+  const intervieweeName = intervieweeSubmission?.profile_name || ''
+  const interviewerName = interviewerSubmission?.profile_name || ''
+  const lastUpdatedAt = predictionData?.prediction?.last_success_at || null
+
+  const isPredictionBusy = predictionLoading || predictionPollRefreshing
+  const refreshButtonLabel = isPredictionBusy
+    ? 'Updating…'
+    : predictionData?.prediction?.status === 'FAILED'
+      ? '↻ Retry'
+      : predictionData?.prediction?.status === 'COMPLETED'
+        ? '↻ Refresh Results'
+        : 'Fetch Results'
 
   const selectedSession = sessionDetail || sessions.find((s) => s.prep_id === selectedPrepId)
   const hasDefaultIntervieweeProfile = Boolean(sessionDetail?.has_default_interviewee_profile)
@@ -563,10 +586,37 @@ export default function ProfileForm() {
           ) : (
             <div className="p-3">
               {/* Right panel header */}
-              <div className="mb-3 pb-3 border-bottom">
-                <h5 className="mb-0 text-primary text-truncate">
-                  {selectedSession ? formatSessionPrimaryLabel(selectedSession) : '…'}
-                </h5>
+              <div className="d-flex justify-content-between align-items-start mb-3 pb-3 border-bottom">
+                <div style={{ minWidth: 0 }}>
+                  <h5 className="mb-0 text-primary text-truncate">
+                    {selectedSession ? formatSessionPrimaryLabel(selectedSession) : '…'}
+                  </h5>
+                  {(intervieweeName || interviewerName) && (
+                    <div className="small text-muted mt-1">
+                      <span className="me-1">👤</span>
+                      {intervieweeName || '—'}&nbsp;→&nbsp;{interviewerName || '—'}
+                    </div>
+                  )}
+                  {lastUpdatedAt && (
+                    <div className="small text-muted mt-1">
+                      Last updated: {formatRelativeTime(lastUpdatedAt)}
+                    </div>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline-secondary"
+                  disabled={isPredictionBusy}
+                  onClick={manualRefreshPrediction}
+                  className="d-flex align-items-center gap-1 ms-2 flex-shrink-0"
+                >
+                  {isPredictionBusy ? (
+                    <Spinner animation="border" size="sm" />
+                  ) : (
+                    <RefreshIcon />
+                  )}
+                  <span style={{ fontSize: '0.78rem' }}>{refreshButtonLabel}</span>
+                </Button>
               </div>
 
               {/* Session settings */}
