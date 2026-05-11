@@ -1,6 +1,7 @@
 # backend/api/ai_client.py
 
 import json
+import re
 from dataclasses import dataclass
 
 import requests
@@ -91,7 +92,17 @@ def _parse_model_content(content):
     return ""
 
 
+def _strip_markdown_fence(content: str) -> str:
+    """Remove ```json ... ``` or ``` ... ``` fences that some models wrap around JSON output."""
+    stripped = content.strip()
+    match = re.match(r"^```(?:json)?\s*\n([\s\S]*?)\n?```\s*$", stripped)
+    if match:
+        return match.group(1).strip()
+    return stripped
+
+
 def _parse_html_payload(content):
+    content = _strip_markdown_fence(content)
     try:
         parsed = json.loads(content)
     except Exception:
