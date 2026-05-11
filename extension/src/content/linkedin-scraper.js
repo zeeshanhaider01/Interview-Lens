@@ -167,6 +167,25 @@
       }
     }
 
+    // Final fallback: LinkedIn page titles are always "Full Name | LinkedIn"
+    // or "Full Name - Headline | LinkedIn". This is set server-side and never
+    // depends on CSS class names.
+    const titleText = normalizeText(document.title ?? "");
+    if (titleText) {
+      const pipeIndex = titleText.indexOf("|");
+      const dashIndex = titleText.indexOf(" - ");
+      const cutAt = Math.min(
+        pipeIndex >= 0 ? pipeIndex : Infinity,
+        dashIndex >= 0 ? dashIndex : Infinity
+      );
+      if (Number.isFinite(cutAt)) {
+        const nameFromTitle = normalizeText(titleText.slice(0, cutAt));
+        if (nameFromTitle) {
+          return nameFromTitle;
+        }
+      }
+    }
+
     return "";
   }
 
