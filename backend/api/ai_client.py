@@ -19,15 +19,17 @@ class AIClientError(Exception):
 
 # Minimal safe allowlist for rich HTML (no scripts/styles)
 _ALLOWED_TAGS = [
-    "article", "section", "header", "footer",
+    "article", "section", "header", "footer", "div",
     "h1", "h2", "h3", "h4", "p", "ul", "ol", "li",
     "strong", "em", "b", "i", "blockquote", "code", "pre",
-    "hr", "br", "span", "details", "summary"
+    "hr", "br", "span", "details", "summary",
 ]
 _ALLOWED_ATTRS = {
-    "span": ["aria-label", "title"],
+    "*": ["class"],
+    "span": ["aria-label", "title", "class"],
+    "div": ["class"],
     "details": ["open"],
-    "summary": []
+    "summary": [],
 }
 
 
@@ -41,14 +43,22 @@ def _sanitize_html(html: str) -> str:
 
 PROMPT_SYSTEM = (
     "You are InterviewerLens, an interview-planning expert. "
-    "Produce a SINGLE self-contained HTML article designed to be shown directly in a web page. "
+    "Produce a SINGLE HTML document fragment designed to be injected directly into a React web page "
+    "that already loads Bootstrap 5. "
     "Requirements:\n"
+    "• Use Bootstrap 5 utility classes for all layout and styling (e.g. mb-3, fw-bold, text-muted, "
+    "card, card-body, list-group, list-group-item, badge, alert, border-start, ps-3, etc.). "
+    "Do NOT invent custom CSS class names — use only Bootstrap 5 classes.\n"
+    "• Do NOT include <style> blocks, <script> tags, or any external resources.\n"
+    "• Use semantic HTML elements: <article>, <section>, <h2>, <h3>, <h4>, <p>, <ul>, <ol>, <li>, "
+    "<strong>, <em>, <span>, <div>, <hr>. No <html>, <head>, or <body> wrapper.\n"
     "• Group content by clear interview TOPICS, with optional SUBTOPICS where useful.\n"
-    "• For each topic, include detailed, specific questions and (when helpful) short follow-up probes.\n"
+    "• For each topic, include detailed, specific questions and (when helpful) short follow-up probes "
+    "marked with 🔍 Follow-up:.\n"
     "• End with a 'Prep Tips' section.\n"
-    "• Use clear headings, lists, short paragraphs, and tasteful emojis (e.g., 🔍💡🧠⚙️📈). "
-    "No external images/CSS/JS; no markdown—HTML only.\n"
-    "Output JSON with a single key 'html' whose value is the HTML string. Example: {\"html\": \"<article>...\"}."
+    "• Use tasteful emojis in headings (e.g., 🔍💡🧠⚙️📈🎙️📋).\n"
+    "Output JSON with a single key 'html' whose value is the HTML string. "
+    "Example: {\"html\": \"<article class=\\\"mb-4\\\">...\"}."
 )
 
 
