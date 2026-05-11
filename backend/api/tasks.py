@@ -1,6 +1,6 @@
 from celery import shared_task
 
-from .models import User
+from .models import PrepSession, User
 from .prediction_service import execute_prediction_job
 
 
@@ -13,8 +13,12 @@ def run_prediction_task(
     interviewer,
     prompt_version="",
     regenerate_nonce="",
+    prep_session_id=None,
 ):
     db_user = User.objects.get(id=db_user_id)
+    prep_session = None
+    if prep_session_id is not None:
+        prep_session = PrepSession.objects.filter(prep_id=prep_session_id).first()
     payload, response_status = execute_prediction_job(
         user_identifier=user_identifier,
         db_user=db_user,
@@ -22,6 +26,7 @@ def run_prediction_task(
         interviewer=interviewer,
         prompt_version=prompt_version,
         regenerate_nonce=regenerate_nonce,
+        prep_session=prep_session,
     )
     return {
         "response_status": response_status,

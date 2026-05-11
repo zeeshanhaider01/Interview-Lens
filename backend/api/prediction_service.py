@@ -116,6 +116,7 @@ def reserve_prediction_job(
     interviewer,
     prompt_version="",
     regenerate_nonce="",
+    prep_session=None,
 ):
     fingerprint = compute_fingerprint(
         user_identifier,
@@ -140,6 +141,7 @@ def reserve_prediction_job(
             fingerprint=fingerprint,
             defaults={
                 "user": db_user,
+                "prep_session": prep_session,
                 "prompt_version": prompt_version or None,
                 "regenerate_nonce": regenerate_nonce or None,
                 "status": InterviewPrediction.STATUS_RUNNING,
@@ -199,6 +201,7 @@ def execute_prediction_job(
     interviewer,
     prompt_version="",
     regenerate_nonce="",
+    prep_session=None,
 ):
     fingerprint = compute_fingerprint(
         user_identifier,
@@ -222,6 +225,7 @@ def execute_prediction_job(
         db_obj = InterviewPrediction.objects.create(
             fingerprint=fingerprint,
             user=db_user,
+            prep_session=prep_session,
             prompt_version=prompt_version or None,
             regenerate_nonce=regenerate_nonce or None,
             status=InterviewPrediction.STATUS_RUNNING,

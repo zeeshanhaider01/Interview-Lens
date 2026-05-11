@@ -81,7 +81,7 @@ def build_prediction_response(payload, response_status):
     return response_body
 
 
-def start_prediction_job(db_user, user_identifier, interviewee, interviewer, prompt_version="", regenerate_nonce=""):
+def start_prediction_job(db_user, user_identifier, interviewee, interviewer, prompt_version="", regenerate_nonce="", prep_session=None):
     payload, response_status, fingerprint, should_enqueue = reserve_prediction_job(
         user_identifier=user_identifier,
         db_user=db_user,
@@ -89,6 +89,7 @@ def start_prediction_job(db_user, user_identifier, interviewee, interviewer, pro
         interviewer=interviewer,
         prompt_version=prompt_version,
         regenerate_nonce=regenerate_nonce,
+        prep_session=prep_session,
     )
     if should_enqueue:
         try:
@@ -99,6 +100,7 @@ def start_prediction_job(db_user, user_identifier, interviewee, interviewer, pro
                 interviewer=interviewer,
                 prompt_version=prompt_version,
                 regenerate_nonce=regenerate_nonce,
+                prep_session_id=str(prep_session.prep_id) if prep_session else None,
             )
         except Exception as exc:
             mark_prediction_enqueue_failed(
@@ -526,6 +528,7 @@ def submit_prep_profile(request, prep_id):
                 request.user.id,
                 interviewee,
                 interviewer,
+                prep_session=prep_session,
             )
         else:
             prediction_payload, prediction_status = run_prediction_pipeline(
