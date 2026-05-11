@@ -7,7 +7,7 @@ from rest_framework import permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from .models import IntervieweeBaselineProfile, PrepProfileSubmission, PrepSession, User
+from .models import InterviewPrediction, IntervieweeBaselineProfile, PrepProfileSubmission, PrepSession, User
 from .prediction_service import (
     get_prediction_state,
     mark_prediction_enqueue_failed,
@@ -311,6 +311,7 @@ def get_owned_prep_session(db_user, prep_id):
 def build_prep_session_detail(prep_session, db_user, user_identifier):
     profile_state = resolve_session_profile_state(prep_session, db_user)
     pipeline_status = profile_state["pipeline_status"]
+    fingerprint = None
 
     if pipeline_status == "READY_FOR_TOPIC_GENERATION":
         interviewee, interviewer = build_predict_payload_from_profile_state(
@@ -328,8 +329,27 @@ def build_prep_session_detail(prep_session, db_user, user_identifier):
             if payload is not None
             else {"status": "NOT_STARTED", "fingerprint": fingerprint}
         )
+        if prediction.get("status") == "COMPLETED" and fingerprint:
+            pred_obj = (
+                InterviewPrediction.objects
+                .filter(fingerprint=fingerprint, user=db_user)
+                .values("last_success_at")
+                .first()
+            )
+            if pred_obj and pred_obj["last_success_at"]:
+                prediction = {**prediction, "last_success_at": pred_obj["last_success_at"].isoformat()}
     else:
         prediction = {"status": "NOT_READY"}
+
+    profile_submissions = [
+        {
+            "role": sub.role,
+            "source_url": sub.source_url or "",
+            "profile_name": (sub.metadata or {}).get("profile_name", ""),
+            "submitted_at": sub.submitted_at.isoformat(),
+        }
+        for sub in prep_session.profile_submissions.order_by("submitted_at").all()
+    ]
 
     return {
         "prep_id": str(prep_session.prep_id),
@@ -344,6 +364,7 @@ def build_prep_session_detail(prep_session, db_user, user_identifier):
         "has_default_interviewee_profile": profile_state["has_default_interviewee_profile"],
         "interviewee_source": profile_state["interviewee_source"],
         "prediction": prediction,
+        "profile_submissions": profile_submissions,
     }
 
 
@@ -596,6 +617,16 @@ def get_prep_prediction(request, prep_id):
         if payload is not None
         else {"status": "NOT_STARTED", "fingerprint": fingerprint}
     )
+    if prediction.get("status") == "COMPLETED":
+        pred_obj = (
+            InterviewPrediction.objects
+            .filter(fingerprint=fingerprint, user=db_user)
+            .values("last_success_at")
+            .first()
+        )
+        if pred_obj and pred_obj["last_success_at"]:
+            prediction = {**prediction, "last_success_at": pred_obj["last_success_at"].isoformat()}
+
     return Response(
         {
             "prep_id": str(prep_session.prep_id),
