@@ -76,12 +76,12 @@ class PrepProfileSubmissionAdmin(ReadOnlyAdmin):
 
 @admin.register(InterviewPrediction)
 class InterviewPredictionAdmin(ReadOnlyAdmin):
-    list_display = ("fingerprint", "user", "status", "prompt_version", "last_success_at", "created_at")
+    list_display = ("fingerprint", "prep_session", "user", "status", "prompt_version", "last_success_at", "created_at")
     list_filter = ("status",)
-    search_fields = ("fingerprint", "user__email")
+    search_fields = ("fingerprint", "user__email", "prep_session__prep_id")
     ordering = ("-created_at",)
     readonly_fields = (
-        "fingerprint", "user", "prompt_version", "regenerate_nonce",
+        "fingerprint", "prep_session", "user", "prompt_version", "regenerate_nonce",
         "status", "result_json", "error_text", "last_success_at",
         "created_at", "updated_at",
     )
