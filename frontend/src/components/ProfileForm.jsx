@@ -62,6 +62,26 @@ function formatRelativeTime(isoString) {
   return `${days} day${days !== 1 ? 's' : ''} ago`
 }
 
+/**
+ * Extracts the final Markdown string from a prediction result object.
+ * Handles two failure modes that can occur when the AI model misbehaves:
+ *   1. The model prepends prose before the JSON → result.markdown is correct (backend fixed).
+ *   2. The model double-wraps: result.markdown is itself a JSON string like
+ *      '{"markdown": "# 🎯..."}' instead of the raw Markdown.
+ * The second case can exist in already-cached DB records, so we unwrap it here too.
+ */
+function extractMarkdown(result) {
+  const raw = result?.markdown || result?.html || ''
+  if (typeof raw === 'string' && raw.trimStart().startsWith('{')) {
+    try {
+      const inner = JSON.parse(raw)
+      if (inner?.markdown) return inner.markdown
+      if (inner?.html) return inner.html
+    } catch (_) {}
+  }
+  return raw
+}
+
 function RefreshIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16">
@@ -784,14 +804,18 @@ export default function ProfileForm() {
                     predictionData.prediction?.status === 'COMPLETED' &&
                     (predictionData.prediction?.result?.markdown || predictionData.prediction?.result?.html) && (
                       <div className="prose max-w-none mt-2">
-                        {predictionData.prediction.result.markdown ? (
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                            {predictionData.prediction.result.markdown}
-                          </ReactMarkdown>
-                        ) : (
+                        {(() => {
+                          const md = extractMarkdown(predictionData.prediction.result)
+                          if (md) {
+                            return (
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
+                            )
+                          }
                           /* Legacy fallback: old cached records that still contain raw HTML */
-                          <div dangerouslySetInnerHTML={{ __html: predictionData.prediction.result.html }} />
-                        )}
+                          return (
+                            <div dangerouslySetInnerHTML={{ __html: predictionData.prediction.result.html }} />
+                          )
+                        })()}
                       </div>
                     )}
                   {predictionData.pipeline_status === 'READY_FOR_TOPIC_GENERATION' &&
