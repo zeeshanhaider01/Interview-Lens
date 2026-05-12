@@ -143,17 +143,54 @@ def _strip_markdown_fence(content: str) -> str:
     return stripped
 
 
+def _extract_json_obj(text):
+    """
+    Try to parse a JSON object from text.
+    First attempt a direct parse; if that fails, scan for the first '{' … last '}'
+    substring so that models which prepend prose before the JSON still work.
+    Returns a dict or None.
+    """
+    try:
+        result = json.loads(text)
+        if isinstance(result, dict):
+            return result
+    except Exception:
+        pass
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end > start:
+        try:
+            result = json.loads(text[start : end + 1])
+            if isinstance(result, dict):
+                return result
+        except Exception:
+            pass
+    return None
+
+
 def _parse_markdown_payload(content):
     content = _strip_markdown_fence(content)
-    try:
-        parsed = json.loads(content)
-    except Exception:
+
+    parsed = _extract_json_obj(content)
+    if parsed is None:
         # Model returned raw Markdown without a JSON wrapper
         parsed = {"markdown": content}
 
     # Prefer the new 'markdown' key; fall back to legacy 'html' key for old cached records
     markdown = parsed.get("markdown") or parsed.get("html") or ""
-    return {"markdown": markdown.strip()}
+    markdown = markdown.strip()
+
+    # Guard against double-wrapped JSON: some models echo back the output format
+    # example from the system prompt, producing {"markdown": "{\"markdown\": \"...\"}"}
+    # instead of {"markdown": "# Heading\n..."}.  Unwrap one extra level if needed.
+    if markdown.startswith("{"):
+        inner = _extract_json_obj(markdown)
+        if isinstance(inner, dict):
+            inner_md = inner.get("markdown") or inner.get("html") or ""
+            if inner_md:
+                markdown = inner_md.strip()
+
+    return {"markdown": markdown}
 
 
 def _raise_http_error(provider_name, response, exc):
