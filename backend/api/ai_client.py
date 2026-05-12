@@ -7,59 +7,25 @@ from dataclasses import dataclass
 import requests
 from django.conf import settings
 
-# Optional: sanitize HTML before sending to the client
-try:
-    import bleach
-except ImportError:
-    bleach = None  # If bleach isn't installed, raw HTML is returned. Install it for safety.
-
 
 class AIClientError(Exception):
     pass
 
 
-# Minimal safe allowlist for rich HTML (no scripts/styles)
-_ALLOWED_TAGS = [
-    "article", "section", "header", "footer", "div",
-    "h1", "h2", "h3", "h4", "p", "ul", "ol", "li",
-    "strong", "em", "b", "i", "blockquote", "code", "pre",
-    "hr", "br", "span", "details", "summary",
-]
-_ALLOWED_ATTRS = {
-    "*": ["class"],
-    "span": ["aria-label", "title", "class"],
-    "div": ["class"],
-    "details": ["open"],
-    "summary": [],
-}
-
-
-def _sanitize_html(html: str) -> str:
-    if not html:
-        return ""
-    if bleach is None:
-        return html
-    return bleach.clean(html, tags=_ALLOWED_TAGS, attributes=_ALLOWED_ATTRS, strip=True)
-
-
 PROMPT_SYSTEM = (
     "You are InterviewerLens, an interview-planning expert. "
-    "Produce a SINGLE HTML document fragment designed to be injected directly into a React web page "
-    "that already loads Bootstrap 5. "
+    "Produce a structured interview guide in Markdown. "
     "Requirements:\n"
-    "• Use Bootstrap 5 utility classes for all layout and styling (e.g. mb-3, fw-bold, text-muted, "
-    "card, card-body, list-group, list-group-item, badge, alert, border-start, ps-3, etc.). "
-    "Do NOT invent custom CSS class names — use only Bootstrap 5 classes.\n"
-    "• Do NOT include <style> blocks, <script> tags, or any external resources.\n"
-    "• Use semantic HTML elements: <article>, <section>, <h2>, <h3>, <h4>, <p>, <ul>, <ol>, <li>, "
-    "<strong>, <em>, <span>, <div>, <hr>. No <html>, <head>, or <body> wrapper.\n"
+    "• Use # for the main title, ## for each topic section, ### for subtopics.\n"
     "• Group content by clear interview TOPICS, with optional SUBTOPICS where useful.\n"
-    "• For each topic, include detailed, specific questions and (when helpful) short follow-up probes "
-    "marked with 🔍 Follow-up:.\n"
-    "• End with a 'Prep Tips' section.\n"
-    "• Use tasteful emojis in headings (e.g., 🔍💡🧠⚙️📈🎙️📋).\n"
-    "Output JSON with a single key 'html' whose value is the HTML string. "
-    "Example: {\"html\": \"<article class=\\\"mb-4\\\">...\"}."
+    "• For each topic, include detailed, specific questions as a numbered list.\n"
+    "• Add short follow-up probes beneath relevant questions, each on its own line "
+    "prefixed with > 🔍 **Follow-up:**\n"
+    "• End with a ## Prep Tips section.\n"
+    "• Use tasteful emojis in headings (e.g., 🔍💡🧠⚙️📈🎙️📋🎯).\n"
+    "• Do NOT include any HTML tags, code fences, or extra formatting — plain Markdown only.\n"
+    "Output JSON with a single key 'markdown' whose value is the Markdown string. "
+    "Example: {\"markdown\": \"# Interview Guide\\n\\n## 🧭 Topic 1\\n\\n1. Question one?\\n\"}."
 )
 
 
@@ -101,15 +67,17 @@ def _strip_markdown_fence(content: str) -> str:
     return stripped
 
 
-def _parse_html_payload(content):
+def _parse_markdown_payload(content):
     content = _strip_markdown_fence(content)
     try:
         parsed = json.loads(content)
     except Exception:
-        parsed = {"html": content}
+        # Model returned raw Markdown without a JSON wrapper
+        parsed = {"markdown": content}
 
-    html = parsed.get("html") or ""
-    return {"html": _sanitize_html(html)}
+    # Prefer the new 'markdown' key; fall back to legacy 'html' key for old cached records
+    markdown = parsed.get("markdown") or parsed.get("html") or ""
+    return {"markdown": markdown.strip()}
 
 
 def _raise_http_error(provider_name, response, exc):
@@ -294,7 +262,7 @@ def _generate_with_openai(config, user_payload):
         raise AIClientError(f"Unexpected error talking to OpenAI: {exc}") from exc
 
     content = data["choices"][0]["message"]["content"]
-    return _parse_html_payload(content)
+    return _parse_markdown_payload(content)
 
 
 def _generate_with_anthropic(config, user_payload):
@@ -331,7 +299,7 @@ def _generate_with_anthropic(config, user_payload):
         raise AIClientError(f"Unexpected error talking to Anthropic: {exc}") from exc
 
     content = _parse_model_content(data.get("content", []))
-    return _parse_html_payload(content)
+    return _parse_markdown_payload(content)
 
 
 PROVIDER_HANDLERS = {
