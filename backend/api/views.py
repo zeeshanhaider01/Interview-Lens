@@ -7,7 +7,13 @@ from rest_framework import permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from .models import InterviewPrediction, IntervieweeBaselineProfile, PrepProfileSubmission, PrepSession, User
+from .models import (
+    IntervieweeBaselineProfile,
+    InterviewPrediction,
+    PrepProfileSubmission,
+    PrepSession,
+    User,
+)
 from .prediction_service import (
     get_prediction_state,
     mark_prediction_enqueue_failed,
