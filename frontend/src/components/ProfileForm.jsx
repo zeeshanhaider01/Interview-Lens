@@ -70,14 +70,6 @@ function RefreshIcon() {
 }
 
 export default function ProfileForm() {
-  const [form, setForm] = useState({
-    interviewee: { name: '', email: '', education: '', experience: '' },
-    interviewer: { name: '', education: '', experience: '' },
-  })
-  const [manualLoading, setManualLoading] = useState(false)
-  const [manualResult, setManualResult] = useState(null)
-  const [manualError, setManualError] = useState(null)
-
   const [sessions, setSessions] = useState([])
   const [sessionsLoading, setSessionsLoading] = useState(true)
   const [sessionsError, setSessionsError] = useState(null)
@@ -282,31 +274,6 @@ export default function ProfileForm() {
     setPredictionRefreshKey((k) => k + 1)
   }, [])
 
-  const onChange = (e, section, field) => {
-    setForm((prev) => ({
-      ...prev,
-      [section]: { ...prev[section], [field]: e.target.value },
-    }))
-  }
-
-  const submitManual = async (e) => {
-    e.preventDefault()
-    setManualResult(null)
-    setManualError(null)
-    setManualLoading(true)
-    try {
-      const token = await getToken()
-      const resp = await axios.post(`${apiBase}/api/predict-questions/`, form, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      setManualResult(resp.data)
-    } catch (err) {
-      setManualError(err?.response?.data?.detail || 'Something went wrong')
-    } finally {
-      setManualLoading(false)
-    }
-  }
-
   // People names sourced from profile_submissions returned by the session detail API
   const intervieweeSubmission = sessionDetail?.profile_submissions?.find((s) => s.role === 'INTERVIEWEE')
   const interviewerSubmission = sessionDetail?.profile_submissions?.find((s) => s.role === 'INTERVIEWER')
@@ -420,7 +387,7 @@ export default function ProfileForm() {
       <Alert variant="info" className="shadow-sm">
         <div className="fw-semibold">Interview Lens Dashboard</div>
         <div className="small">
-          Choose a prep session on the left to view generated prep. You can also submit profiles manually at the bottom.
+          Choose a prep session on the left to view generated prep.
         </div>
       </Alert>
 
@@ -839,131 +806,6 @@ export default function ProfileForm() {
         </div>
       </div>
 
-      {/* ── Manual submission (full width below panels) ── */}
-      <Card className="shadow-sm">
-        <Card.Header className="bg-white">
-          <h4 className="mb-0 text-primary">Manual profile submission</h4>
-          <div className="small text-muted mt-1">
-            Submit interviewee and interviewer text directly (does not use prep sessions above).
-          </div>
-        </Card.Header>
-        <Card.Body>
-          <Form onSubmit={submitManual}>
-            <h5 className="text-secondary">Interviewee</h5>
-            <Row className="g-3">
-              <Col md={6}>
-                <Form.Group>
-                  <Form.Label>Name</Form.Label>
-                  <Form.Control
-                    value={form.interviewee.name}
-                    onChange={(e) => onChange(e, 'interviewee', 'name')}
-                    required
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group>
-                  <Form.Label>Email</Form.Label>
-                  <Form.Control
-                    type="email"
-                    value={form.interviewee.email}
-                    onChange={(e) => onChange(e, 'interviewee', 'email')}
-                    required
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group>
-                  <Form.Label>Education</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={3}
-                    value={form.interviewee.education}
-                    onChange={(e) => onChange(e, 'interviewee', 'education')}
-                    required
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group>
-                  <Form.Label>Professional experience</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={3}
-                    value={form.interviewee.experience}
-                    onChange={(e) => onChange(e, 'interviewee', 'experience')}
-                    required
-                  />
-                </Form.Group>
-              </Col>
-            </Row>
-
-            <hr className="my-4" />
-
-            <h5 className="text-secondary">Interviewer</h5>
-            <Row className="g-3">
-              <Col md={4}>
-                <Form.Group>
-                  <Form.Label>Name</Form.Label>
-                  <Form.Control
-                    value={form.interviewer.name}
-                    onChange={(e) => onChange(e, 'interviewer', 'name')}
-                    required
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={4}>
-                <Form.Group>
-                  <Form.Label>Educational experience</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={3}
-                    value={form.interviewer.education}
-                    onChange={(e) => onChange(e, 'interviewer', 'education')}
-                    required
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={4}>
-                <Form.Group>
-                  <Form.Label>Professional experience</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={3}
-                    value={form.interviewer.experience}
-                    onChange={(e) => onChange(e, 'interviewer', 'experience')}
-                    required
-                  />
-                </Form.Group>
-              </Col>
-            </Row>
-
-            <div className="mt-4 d-flex align-items-center gap-3">
-              <Button type="submit" variant="primary" disabled={manualLoading}>
-                {manualLoading ? (
-                  <>
-                    <Spinner animation="border" size="sm" className="me-2" /> Processing…
-                  </>
-                ) : (
-                  'Submit'
-                )}
-              </Button>
-              {manualError && <span className="text-danger">{manualError}</span>}
-            </div>
-          </Form>
-        </Card.Body>
-      </Card>
-
-      {manualResult?.html && (
-        <Card className="shadow-sm mt-4">
-          <Card.Header className="bg-primary text-white">
-            <h5 className="mb-0">Your personalized interview plan (manual)</h5>
-          </Card.Header>
-          <Card.Body>
-            <div className="prose" dangerouslySetInnerHTML={{ __html: manualResult.html }} />
-          </Card.Body>
-        </Card>
-      )}
     </div>
   )
 }
