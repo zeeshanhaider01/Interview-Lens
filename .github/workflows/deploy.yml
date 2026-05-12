@@ -100,9 +100,12 @@ jobs:
           script: |
             set -e
 
-            cd /home/ubuntu/Interview-Lens/backend
+            cd /home/ubuntu/Interview-Lens
 
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
+
+            cd backend
 
             source .venv/bin/activate
             pip install -r requirements.txt --quiet
