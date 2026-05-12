@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Form, Button, Row, Col, Spinner, Card, Alert, ListGroup, Badge, FormControl } from 'react-bootstrap'
 import axios from 'axios'
 import { useAuth0 } from '@auth0/auth0-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 function formatSessionPrimaryLabel(session) {
   const parts = []
@@ -780,11 +782,17 @@ export default function ProfileForm() {
                   )}
                   {predictionData.pipeline_status === 'READY_FOR_TOPIC_GENERATION' &&
                     predictionData.prediction?.status === 'COMPLETED' &&
-                    predictionData.prediction?.result?.html && (
-                      <div
-                        className="prose"
-                        dangerouslySetInnerHTML={{ __html: predictionData.prediction.result.html }}
-                      />
+                    (predictionData.prediction?.result?.markdown || predictionData.prediction?.result?.html) && (
+                      <div className="prose max-w-none mt-2">
+                        {predictionData.prediction.result.markdown ? (
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {predictionData.prediction.result.markdown}
+                          </ReactMarkdown>
+                        ) : (
+                          /* Legacy fallback: old cached records that still contain raw HTML */
+                          <div dangerouslySetInnerHTML={{ __html: predictionData.prediction.result.html }} />
+                        )}
+                      </div>
                     )}
                   {predictionData.pipeline_status === 'READY_FOR_TOPIC_GENERATION' &&
                     (predictionData.prediction?.status === 'RUNNING' ||

@@ -1,0 +1,6 @@
+/* Tailwind v4 — load only theme + utilities, skip preflight so Bootstrap base styles are untouched */
+@import "tailwindcss/theme" layer(theme);
+@import "tailwindcss/utilities" layer(utilities);
+
+/* Tailwind Typography plugin — provides the `prose` class used for Markdown rendering */
+@plugin "@tailwindcss/typography";
