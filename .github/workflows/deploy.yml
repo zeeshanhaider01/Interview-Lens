@@ -136,9 +136,10 @@ jobs:
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: frontend
+    # Default shell cwd is repo root. Vercel project Root Directory is `frontend`
+    # (relative to repo). Running the CLI with job cwd already `frontend/` made
+    # `vercel deploy --prebuilt` resolve `frontend/frontend` (path does not exist).
+    # Use `vercel --cwd frontend` from root instead; see Vercel CLI global `--cwd`.
 
     steps:
       - name: Checkout code
@@ -152,29 +153,18 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
+        working-directory: frontend
         run: npm ci
 
-      # ── BUILD STEP (Vercel "prebuilt" requires .vercel/output) ────────────
+      # ── BUILD STEP (Vercel "prebuilt" requires frontend/.vercel/output) ─────
       - name: Pull Vercel project settings
-        run: npx vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        run: npx vercel --cwd frontend pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-      # Vercel links monorepo apps with settings.rootDirectory (e.g. "frontend"). Running
-      # `vercel build` with job cwd already `frontend/` makes the CLI join that path twice
-      # (frontend/frontend/...), which surfaces as "Error: spawn sh ENOENT". Clearing
-      # rootDirectory here matches the workaround in vercel/vercel#10202.
-      - name: Normalize Vercel project.json for monorepo cwd
-        run: |
-          if [ -f .vercel/project.json ]; then
-            tmp="$(mktemp)"
-            jq '.settings = (.settings // {}) | .settings.rootDirectory = ""' .vercel/project.json > "$tmp"
-            mv "$tmp" .vercel/project.json
-          fi
-
       - name: Build (Vercel output)
-        run: npx vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: npx vercel --cwd frontend build --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
@@ -189,7 +179,7 @@ jobs:
       # Secrets needed: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
       #
       - name: Deploy to Vercel
-        run: npx vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: npx vercel --cwd frontend deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
