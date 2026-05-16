@@ -66,11 +66,24 @@ def stringify_section(value):
     return str(value).strip()
 
 
+def build_interview_context(prep_session=None):
+    if prep_session is None:
+        return {"target_role": "", "target_company": ""}
+    return {
+        "target_role": str(prep_session.title or "").strip(),
+        "target_company": str(prep_session.company_name or "").strip(),
+    }
+
+
 def build_predict_payload_from_prep_session(prep_session, user_email=None):
     profile_state = resolve_session_profile_state(prep_session, prep_session.user)
     if profile_state["pipeline_status"] != "READY_FOR_TOPIC_GENERATION":
         raise ValueError("Both required profiles are not available for prediction.")
-    return build_predict_payload_from_profile_state(profile_state, user_email=user_email)
+    return build_predict_payload_from_profile_state(
+        profile_state,
+        user_email=user_email,
+        prep_session=prep_session,
+    )
 
 
 def build_prediction_response(payload, response_status):
@@ -87,12 +100,24 @@ def build_prediction_response(payload, response_status):
     return response_body
 
 
-def start_prediction_job(db_user, user_identifier, interviewee, interviewer, prompt_version="", regenerate_nonce="", prep_session=None):
+def start_prediction_job(
+    db_user,
+    user_identifier,
+    interviewee,
+    interviewer,
+    prompt_version="",
+    regenerate_nonce="",
+    prep_session=None,
+    interview_context=None,
+):
+    if interview_context is None:
+        interview_context = build_interview_context(prep_session)
     payload, response_status, fingerprint, should_enqueue = reserve_prediction_job(
         user_identifier=user_identifier,
         db_user=db_user,
         interviewee=interviewee,
         interviewer=interviewer,
+        interview_context=interview_context,
         prompt_version=prompt_version,
         regenerate_nonce=regenerate_nonce,
         prep_session=prep_session,
@@ -104,6 +129,7 @@ def start_prediction_job(db_user, user_identifier, interviewee, interviewer, pro
                 db_user_id=db_user.id,
                 interviewee=interviewee,
                 interviewer=interviewer,
+                interview_context=interview_context,
                 prompt_version=prompt_version,
                 regenerate_nonce=regenerate_nonce,
                 prep_session_id=str(prep_session.prep_id) if prep_session else None,
@@ -187,26 +213,39 @@ def resolve_session_profile_state(prep_session, db_user):
     }
 
 
-def build_predict_payload_from_profile_state(profile_state, user_email=None):
-    interviewee_sections = {}
-    if profile_state["interviewee_source"] == "SESSION":
-        interviewee_sections = profile_state["session_interviewee_submission"].extracted_sections
-    elif profile_state["interviewee_source"] == "DEFAULT":
-        interviewee_sections = profile_state["baseline_interviewee_profile"].extracted_sections
+def _profile_display_name(profile_record, fallback):
+    if not profile_record:
+        return fallback
+    metadata = getattr(profile_record, "metadata", None) or {}
+    name = str(metadata.get("profile_name") or "").strip()
+    return name or fallback
 
-    interviewer_sections = profile_state["interviewer_submission"].extracted_sections
+
+def build_predict_payload_from_profile_state(profile_state, user_email=None, prep_session=None):
+    interviewee_sections = {}
+    interviewee_record = None
+    if profile_state["interviewee_source"] == "SESSION":
+        interviewee_record = profile_state["session_interviewee_submission"]
+        interviewee_sections = interviewee_record.extracted_sections
+    elif profile_state["interviewee_source"] == "DEFAULT":
+        interviewee_record = profile_state["baseline_interviewee_profile"]
+        interviewee_sections = interviewee_record.extracted_sections
+
+    interviewer_record = profile_state["interviewer_submission"]
+    interviewer_sections = interviewer_record.extracted_sections
     interviewee = {
-        "name": "Interviewee",
+        "name": _profile_display_name(interviewee_record, "Interviewee"),
         "email": user_email or "unknown@example.com",
         "education": stringify_section(interviewee_sections.get("education")) or "Not provided",
         "experience": normalize_sections_to_text(interviewee_sections) or "Not provided",
     }
     interviewer = {
-        "name": "Interviewer",
+        "name": _profile_display_name(interviewer_record, "Interviewer"),
         "education": stringify_section(interviewer_sections.get("education")) or "Not provided",
         "experience": normalize_sections_to_text(interviewer_sections) or "Not provided",
     }
-    return interviewee, interviewer
+    interview_context = build_interview_context(prep_session)
+    return interviewee, interviewer, interview_context
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
@@ -219,6 +258,7 @@ def predict_questions(request):
     interviewer = s.validated_data["interviewer"]
     prompt_version = s.validated_data.get("prompt_version", "") or ""
     regenerate_nonce = s.validated_data.get("regenerate_nonce", "") or ""
+    interview_context = build_interview_context()
     db_user = get_or_create_db_user(request.user)
     if getattr(settings, "ENABLE_CACHING", True):
         payload, response_status = start_prediction_job(
@@ -228,6 +268,7 @@ def predict_questions(request):
             interviewer,
             prompt_version,
             regenerate_nonce,
+            interview_context=interview_context,
         )
     else:
         payload, response_status = run_prediction_pipeline(
@@ -235,6 +276,7 @@ def predict_questions(request):
             db_user=db_user,
             interviewee=interviewee,
             interviewer=interviewer,
+            interview_context=interview_context,
             prompt_version=prompt_version,
             regenerate_nonce=regenerate_nonce,
         )
@@ -264,15 +306,17 @@ def compute_prep_session_row(prep_session, db_user, user_identifier, *, is_lates
         row["row_status"] = "waiting_for_profiles"
         return row
 
-    interviewee, interviewer = build_predict_payload_from_profile_state(
+    interviewee, interviewer, interview_context = build_predict_payload_from_profile_state(
         profile_state,
         user_email=db_user.email,
+        prep_session=prep_session,
     )
     payload, response_status, fingerprint = get_prediction_state(
         user_identifier=user_identifier,
         db_user=db_user,
         interviewee=interviewee,
         interviewer=interviewer,
+        interview_context=interview_context,
     )
     prediction = (
         build_prediction_response(payload, response_status)
@@ -320,15 +364,17 @@ def build_prep_session_detail(prep_session, db_user, user_identifier):
     fingerprint = None
 
     if pipeline_status == "READY_FOR_TOPIC_GENERATION":
-        interviewee, interviewer = build_predict_payload_from_profile_state(
+        interviewee, interviewer, interview_context = build_predict_payload_from_profile_state(
             profile_state,
             user_email=db_user.email,
+            prep_session=prep_session,
         )
         payload, response_status, fingerprint = get_prediction_state(
             user_identifier=user_identifier,
             db_user=db_user,
             interviewee=interviewee,
             interviewer=interviewer,
+            interview_context=interview_context,
         )
         prediction = (
             build_prediction_response(payload, response_status)
@@ -545,9 +591,10 @@ def submit_prep_profile(request, prep_id):
 
     prediction = None
     if pipeline_status == "READY_FOR_TOPIC_GENERATION":
-        interviewee, interviewer = build_predict_payload_from_profile_state(
+        interviewee, interviewer, interview_context = build_predict_payload_from_profile_state(
             profile_state,
             user_email=db_user.email,
+            prep_session=prep_session,
         )
         if getattr(settings, "ENABLE_CACHING", True):
             prediction_payload, prediction_status = start_prediction_job(
@@ -556,6 +603,7 @@ def submit_prep_profile(request, prep_id):
                 interviewee,
                 interviewer,
                 prep_session=prep_session,
+                interview_context=interview_context,
             )
         else:
             prediction_payload, prediction_status = run_prediction_pipeline(
@@ -563,6 +611,7 @@ def submit_prep_profile(request, prep_id):
                 db_user=db_user,
                 interviewee=interviewee,
                 interviewer=interviewer,
+                interview_context=interview_context,
             )
         prediction = build_prediction_response(prediction_payload, prediction_status)
 
@@ -608,15 +657,17 @@ def get_prep_prediction(request, prep_id):
             status=status.HTTP_200_OK,
         )
 
-    interviewee, interviewer = build_predict_payload_from_profile_state(
+    interviewee, interviewer, interview_context = build_predict_payload_from_profile_state(
         profile_state,
         user_email=db_user.email,
+        prep_session=prep_session,
     )
     payload, response_status, fingerprint = get_prediction_state(
         user_identifier=request.user.id,
         db_user=db_user,
         interviewee=interviewee,
         interviewer=interviewer,
+        interview_context=interview_context,
     )
     prediction = (
         build_prediction_response(payload, response_status)
