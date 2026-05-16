@@ -14,6 +14,7 @@ def run_prediction_task(
     prompt_version="",
     regenerate_nonce="",
     prep_session_id=None,
+    interview_context=None,
 ):
     db_user = User.objects.get(id=db_user_id)
     prep_session = None
@@ -27,6 +28,7 @@ def run_prediction_task(
         prompt_version=prompt_version,
         regenerate_nonce=regenerate_nonce,
         prep_session=prep_session,
+        interview_context=interview_context,
     )
     return {
         "response_status": response_status,

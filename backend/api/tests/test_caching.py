@@ -104,6 +104,7 @@ class PredictEndpointTests(APITestCase):
             db_user_id=db_user.id,
             interviewee=payload["interviewee"],
             interviewer=payload["interviewer"],
+            interview_context={"target_role": "", "target_company": ""},
         )
         self.assertEqual(mock_generate.call_count, 1)
 

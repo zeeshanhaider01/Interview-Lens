@@ -5,11 +5,23 @@ from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
-from .ai_client import AIClientError, generate_questions
+from .ai_client import AIClientError, PROMPT_VERSION, _normalize_interview_context, generate_questions
 from .models import InterviewPrediction
 
 
-def compute_fingerprint(user_identifier, interviewee, interviewer, prompt_version="", regenerate_nonce=""):
+def _effective_prompt_version(prompt_version=""):
+    explicit = str(prompt_version or "").strip()
+    return explicit or PROMPT_VERSION
+
+
+def compute_fingerprint(
+    user_identifier,
+    interviewee,
+    interviewer,
+    prompt_version="",
+    regenerate_nonce="",
+    interview_context=None,
+):
     """
     Deterministic fingerprint of the request + prompt versioning inputs.
     """
@@ -19,9 +31,14 @@ def compute_fingerprint(user_identifier, interviewee, interviewer, prompt_versio
     digest.update(json.dumps(interviewee, sort_keys=True).encode("utf-8"))
     digest.update(b"||")
     digest.update(json.dumps(interviewer, sort_keys=True).encode("utf-8"))
-    if prompt_version:
+    digest.update(b"||ctx:")
+    digest.update(
+        json.dumps(_normalize_interview_context(interview_context), sort_keys=True).encode("utf-8")
+    )
+    version = _effective_prompt_version(prompt_version)
+    if version:
         digest.update(b"||v:")
-        digest.update(str(prompt_version).encode("utf-8"))
+        digest.update(version.encode("utf-8"))
     if regenerate_nonce:
         digest.update(b"||r:")
         digest.update(str(regenerate_nonce).encode("utf-8"))
@@ -96,6 +113,7 @@ def get_prediction_state(
     interviewer,
     prompt_version="",
     regenerate_nonce="",
+    interview_context=None,
 ):
     fingerprint = compute_fingerprint(
         user_identifier,
@@ -103,6 +121,7 @@ def get_prediction_state(
         interviewer,
         prompt_version,
         regenerate_nonce,
+        interview_context,
     )
     payload, response_status = get_prediction_state_by_fingerprint(db_user, fingerprint)
     return payload, response_status, fingerprint
@@ -117,6 +136,7 @@ def reserve_prediction_job(
     prompt_version="",
     regenerate_nonce="",
     prep_session=None,
+    interview_context=None,
 ):
     fingerprint = compute_fingerprint(
         user_identifier,
@@ -124,6 +144,7 @@ def reserve_prediction_job(
         interviewer,
         prompt_version,
         regenerate_nonce,
+        interview_context,
     )
     payload, response_status = get_prediction_state_by_fingerprint(db_user, fingerprint)
     if payload is not None:
@@ -142,7 +163,7 @@ def reserve_prediction_job(
             defaults={
                 "user": db_user,
                 "prep_session": prep_session,
-                "prompt_version": prompt_version or None,
+                "prompt_version": _effective_prompt_version(prompt_version) or None,
                 "regenerate_nonce": regenerate_nonce or None,
                 "status": InterviewPrediction.STATUS_RUNNING,
             },
@@ -174,10 +195,11 @@ def run_prediction_pipeline(
     interviewer,
     prompt_version="",
     regenerate_nonce="",
+    interview_context=None,
 ):
     if not getattr(settings, "ENABLE_CACHING", True):
         try:
-            return generate_questions(interviewee, interviewer), 200
+            return generate_questions(interviewee, interviewer, interview_context), 200
         except AIClientError as exc:
             return {"status": "FAILED", "error": str(exc)}, 502
         except Exception as exc:
@@ -190,6 +212,7 @@ def run_prediction_pipeline(
         interviewer=interviewer,
         prompt_version=prompt_version,
         regenerate_nonce=regenerate_nonce,
+        interview_context=interview_context,
     )
 
 
@@ -202,6 +225,7 @@ def execute_prediction_job(
     prompt_version="",
     regenerate_nonce="",
     prep_session=None,
+    interview_context=None,
 ):
     fingerprint = compute_fingerprint(
         user_identifier,
@@ -209,6 +233,7 @@ def execute_prediction_job(
         interviewer,
         prompt_version,
         regenerate_nonce,
+        interview_context,
     )
     lock_key = _build_lock_key(fingerprint)
     result_key = _build_result_key(fingerprint)
@@ -226,13 +251,13 @@ def execute_prediction_job(
             fingerprint=fingerprint,
             user=db_user,
             prep_session=prep_session,
-            prompt_version=prompt_version or None,
+            prompt_version=_effective_prompt_version(prompt_version) or None,
             regenerate_nonce=regenerate_nonce or None,
             status=InterviewPrediction.STATUS_RUNNING,
         )
 
     try:
-        result = generate_questions(interviewee, interviewer)
+        result = generate_questions(interviewee, interviewer, interview_context)
         db_obj.result_json = json.dumps(result)
         db_obj.status = InterviewPrediction.STATUS_COMPLETED
         db_obj.error_text = ""

@@ -361,7 +361,11 @@ class PrepSessionEndpointTests(APITestCase):
     @mock.patch("api.views.run_prediction_task.delay")
     def test_submit_profile_queues_prediction_once_ready(self, mock_delay):
         db_user = User.objects.create(auth0_sub="test|predict-from-prep", email="prep-flow@example.com")
-        prep_session = PrepSession.objects.create(user=db_user, title="Full prep")
+        prep_session = PrepSession.objects.create(
+            user=db_user,
+            title="Junior Backend Engineer",
+            company_name="Acme",
+        )
         self.client.force_authenticate(
             user=Auth0User({"sub": "test|predict-from-prep", "email": "prep-flow@example.com"})
         )
@@ -402,6 +406,10 @@ class PrepSessionEndpointTests(APITestCase):
         self.assertEqual(second_response.json()["pipeline_status"], "READY_FOR_TOPIC_GENERATION")
         self.assertEqual(second_response.json()["prediction"]["status"], "RUNNING")
         self.assertEqual(mock_delay.call_count, 1)
+        self.assertEqual(
+            mock_delay.call_args.kwargs["interview_context"],
+            {"target_role": "Junior Backend Engineer", "target_company": "Acme"},
+        )
 
     @mock.patch("api.prediction_service.generate_questions")
     def test_submit_profile_reuses_completed_prediction_without_requeue(self, mock_generate):
@@ -449,6 +457,7 @@ class PrepSessionEndpointTests(APITestCase):
                 "education": "MS Software Engineering",
                 "experience": "EXPERIENCE:\nEngineering Manager\n\nEDUCATION:\nMS Software Engineering",
             },
+            interview_context={"target_role": "Repeat prep", "target_company": ""},
         )
 
         with mock.patch("api.views.run_prediction_task.delay") as repeat_delay:
@@ -516,6 +525,7 @@ class PrepSessionEndpointTests(APITestCase):
                 "education": "MS Software Engineering",
                 "experience": "EXPERIENCE:\nSenior Engineering Manager\n\nEDUCATION:\nMS Software Engineering",
             },
+            interview_context={"target_role": "Status prep", "target_company": ""},
         )
 
         response = self.client.get(status_url)
