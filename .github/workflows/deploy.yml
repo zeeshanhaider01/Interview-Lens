@@ -136,11 +136,12 @@ jobs:
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
 
-    # Default shell cwd is repo root. Use `vercel --cwd frontend` so paths resolve once.
-    # `vercel pull` restores settings.rootDirectory (e.g. "frontend"); with `--cwd frontend`
-    # that doubles to `frontend/frontend` — clear it in frontend/.vercel/project.json again
-    # after build if needed: `vercel build` can rewrite that file, and `deploy --prebuilt`
-    # re-resolves paths (spawn sh ENOENT / "path does not exist").
+    # Shell cwd is repo root. Vercel dashboard Root Directory is `frontend` — run `vercel`
+    # from the repo root only (no `--cwd frontend`). Per Vercel docs, set root in project
+    # settings and invoke the CLI from the monorepo root so paths are not doubled.
+
+    env:
+      VERCEL_CLI_VERSION: "39.0.1"
 
     steps:
       - name: Checkout code
@@ -157,26 +158,15 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      # ── BUILD STEP (Vercel "prebuilt" requires frontend/.vercel/output) ─────
+      # ── BUILD STEP (Vercel "prebuilt" requires .vercel/output; Root Directory = frontend) ─
       - name: Pull Vercel project settings
-        run: npx vercel --cwd frontend pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        run: npx vercel@${{ env.VERCEL_CLI_VERSION }} pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-      # Pull restores settings.rootDirectory (e.g. "frontend"). With `vercel --cwd frontend`
-      # the app root is already `frontend/`; leaving rootDirectory set makes the CLI resolve
-      # `frontend/frontend` and fail with "spawn sh ENOENT".
-      - name: Clear rootDirectory in frontend/.vercel/project.json
-        run: |
-          if [ -f frontend/.vercel/project.json ]; then
-            tmp="$(mktemp)"
-            jq '.settings = (.settings // {}) | .settings.rootDirectory = ""' frontend/.vercel/project.json > "$tmp"
-            mv "$tmp" frontend/.vercel/project.json
-          fi
-
       - name: Build (Vercel output)
-        run: npx vercel --cwd frontend build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: npx vercel@${{ env.VERCEL_CLI_VERSION }} build --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
@@ -185,22 +175,13 @@ jobs:
           VITE_AUTH0_CLIENT_ID: ${{ secrets.VITE_AUTH0_CLIENT_ID }}
           VITE_AUTH0_AUDIENCE: ${{ secrets.VITE_AUTH0_AUDIENCE }}
 
-      # Deploy re-reads / may merge project settings — ensure rootDirectory is not stacked again.
-      - name: Clear rootDirectory before deploy
-        run: |
-          if [ -f frontend/.vercel/project.json ]; then
-            tmp="$(mktemp)"
-            jq '.settings = (.settings // {}) | .settings.rootDirectory = ""' frontend/.vercel/project.json > "$tmp"
-            mv "$tmp" frontend/.vercel/project.json
-          fi
-
       # ── DEPLOY STEP (swap this block when you change hosting) ──────────────
       #
       # Current: Vercel
       # Secrets needed: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
       #
       - name: Deploy to Vercel
-        run: npx vercel --cwd frontend deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: npx vercel@${{ env.VERCEL_CLI_VERSION }} deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
