@@ -136,10 +136,10 @@ jobs:
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
 
-    # Default shell cwd is repo root. Vercel project Root Directory is `frontend`
-    # (relative to repo). Running the CLI with job cwd already `frontend/` made
-    # `vercel deploy --prebuilt` resolve `frontend/frontend` (path does not exist).
-    # Use `vercel --cwd frontend` from root instead; see Vercel CLI global `--cwd`.
+    # Default shell cwd is repo root. Use `vercel --cwd frontend` so deploy does not
+    # resolve `frontend/frontend`. After `vercel pull`, clear `settings.rootDirectory`
+    # in frontend/.vercel/project.json — pull restores it from the dashboard, but with
+    # `--cwd frontend` it would double the path and break build (spawn sh ENOENT).
 
     steps:
       - name: Checkout code
@@ -162,6 +162,17 @@ jobs:
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      # Pull restores settings.rootDirectory (e.g. "frontend"). With `vercel --cwd frontend`
+      # the app root is already `frontend/`; leaving rootDirectory set makes the CLI resolve
+      # `frontend/frontend` and fail with "spawn sh ENOENT".
+      - name: Clear rootDirectory in frontend/.vercel/project.json
+        run: |
+          if [ -f frontend/.vercel/project.json ]; then
+            tmp="$(mktemp)"
+            jq '.settings = (.settings // {}) | .settings.rootDirectory = ""' frontend/.vercel/project.json > "$tmp"
+            mv "$tmp" frontend/.vercel/project.json
+          fi
 
       - name: Build (Vercel output)
         run: npx vercel --cwd frontend build --prod --token=${{ secrets.VERCEL_TOKEN }}
