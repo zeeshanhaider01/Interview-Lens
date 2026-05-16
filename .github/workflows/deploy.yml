@@ -136,10 +136,11 @@ jobs:
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
 
-    # Default shell cwd is repo root. Use `vercel --cwd frontend` so deploy does not
-    # resolve `frontend/frontend`. After `vercel pull`, clear `settings.rootDirectory`
-    # in frontend/.vercel/project.json — pull restores it from the dashboard, but with
-    # `--cwd frontend` it would double the path and break build (spawn sh ENOENT).
+    # Default shell cwd is repo root. Use `vercel --cwd frontend` so paths resolve once.
+    # `vercel pull` restores settings.rootDirectory (e.g. "frontend"); with `--cwd frontend`
+    # that doubles to `frontend/frontend` — clear it in frontend/.vercel/project.json again
+    # after build if needed: `vercel build` can rewrite that file, and `deploy --prebuilt`
+    # re-resolves paths (spawn sh ENOENT / "path does not exist").
 
     steps:
       - name: Checkout code
@@ -183,6 +184,15 @@ jobs:
           VITE_AUTH0_DOMAIN: ${{ secrets.VITE_AUTH0_DOMAIN }}
           VITE_AUTH0_CLIENT_ID: ${{ secrets.VITE_AUTH0_CLIENT_ID }}
           VITE_AUTH0_AUDIENCE: ${{ secrets.VITE_AUTH0_AUDIENCE }}
+
+      # Deploy re-reads / may merge project settings — ensure rootDirectory is not stacked again.
+      - name: Clear rootDirectory before deploy
+        run: |
+          if [ -f frontend/.vercel/project.json ]; then
+            tmp="$(mktemp)"
+            jq '.settings = (.settings // {}) | .settings.rootDirectory = ""' frontend/.vercel/project.json > "$tmp"
+            mv "$tmp" frontend/.vercel/project.json
+          fi
 
       # ── DEPLOY STEP (swap this block when you change hosting) ──────────────
       #
