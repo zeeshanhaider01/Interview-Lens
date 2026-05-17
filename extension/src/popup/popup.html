@@ -154,6 +154,21 @@
         <textarea id="honorsAwardsField" rows="3"></textarea>
       </section>
 
+      <section id="profileSizeSection" class="profileSizeSection hidden" aria-live="polite">
+        <div class="profileSizeHeader">
+          <h2 class="profileSizeTitle">Profile size for AI</h2>
+          <span id="profileSizeBadge" class="profileSizeBadge profileSizeBadge--ok">OK</span>
+        </div>
+        <p class="hintText profileSizeSubtitle">Estimated from scraped profile data</p>
+        <p id="profileSizeStats" class="profileSizeStats">~0 tokens · 0 characters</p>
+        <p id="profileSizePercent" class="profileSizePercent">0% of recommended limit</p>
+        <div class="profileSizeBarTrack" aria-hidden="true">
+          <div id="profileSizeBarFill" class="profileSizeBarFill profileSizeBarFill--ok" style="width: 0%"></div>
+        </div>
+        <p id="profileSizeHint" class="hintText profileSizeHint"></p>
+        <ul id="profileSizeBreakdown" class="profileSizeBreakdown hidden"></ul>
+      </section>
+
       <section id="submitSection">
         <button id="submitButton" type="button" class="btnPrimary">Send to Interview Lens</button>
       </section>
