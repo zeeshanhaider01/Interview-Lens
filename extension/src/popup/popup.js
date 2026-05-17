@@ -9,6 +9,7 @@ import {
 import { getSettings } from "../lib/config.js";
 import { PROFILE_ROLES, SECTION_KEYS, STORAGE_KEYS } from "../lib/constants.js";
 import { normalizeCapture } from "../lib/normalizer.js";
+import { estimateProfileSize } from "../lib/profile-size.js";
 
 const ui = {
   loginButton: document.getElementById("loginButton"),
@@ -30,6 +31,13 @@ const ui = {
   prepSessionSection: document.getElementById("prepSessionSection"),
   captureProfileSection: document.getElementById("captureProfileSection"),
   reviewEditSection: document.getElementById("reviewEditSection"),
+  profileSizeSection: document.getElementById("profileSizeSection"),
+  profileSizeBadge: document.getElementById("profileSizeBadge"),
+  profileSizeStats: document.getElementById("profileSizeStats"),
+  profileSizePercent: document.getElementById("profileSizePercent"),
+  profileSizeBarFill: document.getElementById("profileSizeBarFill"),
+  profileSizeHint: document.getElementById("profileSizeHint"),
+  profileSizeBreakdown: document.getElementById("profileSizeBreakdown"),
   submitSection: document.getElementById("submitSection"),
   prepIdInput: document.getElementById("prepIdInput"),
   addPrepSessionButton: document.getElementById("addPrepSessionButton"),
@@ -78,6 +86,8 @@ let currentSettings = {};
 let isAuthFlowPending = false;
 let isPrepValidationPending = false;
 let activePrepId = "";
+let lastProfileSizeEstimate = null;
+let profileSizeUpdateTimer = null;
 const POPUP_LOCAL_DRAFT_KEY = "popup_draft_local_backup";
 const DEFAULT_ACCESSIBILITY_PREFS = {
   viewMode: "compact",
@@ -385,11 +395,88 @@ function setAuthProgress(isVisible, label = "Authenticating...") {
   ui.authProgressLabel.textContent = label;
 }
 
+function shouldShowProfileSizePanel() {
+  if (!isAuthenticated) {
+    return false;
+  }
+  if (
+    getRoleValue() === PROFILE_ROLES.INTERVIEWEE &&
+    getIntervieweeChoice() === INTERVIEWEE_PROFILE_CHOICES.REUSE_SAVED
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function formatProfileSizeNumber(value) {
+  return Number(value ?? 0).toLocaleString("en-US");
+}
+
+function updateProfileSizePanel(sections = readEditedSections()) {
+  if (!shouldShowProfileSizePanel()) {
+    ui.profileSizeSection.classList.add("hidden");
+    lastProfileSizeEstimate = null;
+    applyActionAvailability();
+    return;
+  }
+
+  const estimate = estimateProfileSize(sections);
+  lastProfileSizeEstimate = estimate;
+
+  if (!estimate.hasContent) {
+    ui.profileSizeSection.classList.add("hidden");
+    applyActionAvailability();
+    return;
+  }
+
+  ui.profileSizeSection.classList.remove("hidden");
+  ui.profileSizeStats.textContent = `~${formatProfileSizeNumber(
+    estimate.estimatedTokens
+  )} tokens · ${formatProfileSizeNumber(estimate.chars)} characters`;
+  ui.profileSizePercent.textContent = `${estimate.percent}% of recommended limit`;
+
+  ui.profileSizeBadge.textContent = estimate.badgeLabel;
+  ui.profileSizeBadge.className = `profileSizeBadge profileSizeBadge--${estimate.level}`;
+
+  ui.profileSizeBarFill.style.width = `${estimate.percent}%`;
+  ui.profileSizeBarFill.className = `profileSizeBarFill profileSizeBarFill--${estimate.level}`;
+
+  ui.profileSizeHint.textContent = estimate.hint;
+
+  if (estimate.breakdown.length) {
+    ui.profileSizeBreakdown.innerHTML = estimate.breakdown
+      .map(
+        (row) =>
+          `<li><span>${row.label}</span><span>~${formatProfileSizeNumber(
+            row.estimatedTokens
+          )} tokens</span></li>`
+      )
+      .join("");
+    ui.profileSizeBreakdown.classList.remove("hidden");
+  } else {
+    ui.profileSizeBreakdown.innerHTML = "";
+    ui.profileSizeBreakdown.classList.add("hidden");
+  }
+
+  applyActionAvailability();
+}
+
+function scheduleProfileSizePanelUpdate() {
+  if (profileSizeUpdateTimer) {
+    clearTimeout(profileSizeUpdateTimer);
+  }
+  profileSizeUpdateTimer = setTimeout(() => {
+    profileSizeUpdateTimer = null;
+    updateProfileSizePanel();
+  }, 150);
+}
+
 function applyActionAvailability() {
   ui.loginButton.disabled = isAuthFlowPending || isAuthenticated;
   ui.logoutButton.disabled = isAuthFlowPending || !isAuthenticated;
   ui.createPrepSessionButton.disabled = isAuthFlowPending || !isAuthenticated;
-  ui.submitButton.disabled = isAuthFlowPending || !isAuthenticated;
+  const profileBlocked = Boolean(lastProfileSizeEstimate && !lastProfileSizeEstimate.submitAllowed);
+  ui.submitButton.disabled = isAuthFlowPending || !isAuthenticated || profileBlocked;
   ui.captureButton.disabled = isAuthFlowPending;
   updatePrepActionButtonsVisibility();
 }
@@ -408,6 +495,7 @@ function renderAuthStateUi() {
   ui.prepSessionSection.classList.toggle("hidden", !showWorkflow);
   ui.captureProfileSection.classList.toggle("hidden", !showWorkflow);
   ui.reviewEditSection.classList.toggle("hidden", !showWorkflow);
+  ui.profileSizeSection.classList.toggle("hidden", !showWorkflow || !lastProfileSizeEstimate?.hasContent);
   ui.submitSection.classList.toggle("hidden", !showWorkflow);
   ui.dashboardCtaSection.classList.toggle("hidden", !showWorkflow || !latestDashboardUrl);
 }
@@ -516,6 +604,7 @@ function writeSections(sections = {}) {
     ui.fields[key].value = (sections[key] ?? []).join("\n");
   }
   autoResizeAllTextareas();
+  updateProfileSizePanel(sections);
 }
 
 function resetPopupFormAfterLogout() {
@@ -529,6 +618,8 @@ function resetPopupFormAfterLogout() {
   ui.uploadScopeDefault.checked = false;
   ui.profileNameField.value = "";
   writeSections({});
+  lastProfileSizeEstimate = null;
+  ui.profileSizeSection.classList.add("hidden");
   clearLocalPopupDraft();
 }
 
@@ -642,6 +733,7 @@ async function loadInitialState() {
     setCapturedProfileBadge(cached.role);
   }
   await refreshIntervieweeDecisionState();
+  updateProfileSizePanel();
 }
 
 async function getCurrentLinkedInTab() {
@@ -835,6 +927,10 @@ ui.submitButton.addEventListener("click", async () => {
     if (!prepId) {
       throw new Error("prep_id is required before submit.");
     }
+    const sizeEstimate = estimateProfileSize(readEditedSections());
+    if (!sizeEstimate.submitAllowed) {
+      throw new Error(sizeEstimate.hint);
+    }
     await persistActivePrepId(prepId);
     setActivePrepBadge(prepId);
     if (!Object.values(PROFILE_ROLES).includes(role)) {
@@ -916,6 +1012,7 @@ ui.submitButton.addEventListener("click", async () => {
     ui.profileNameField.value = "";
     setCapturedProfileBadge(null);
     updateIntervieweeDecisionUi();
+    updateProfileSizePanel();
     persistPopupDraft().catch(() => {
       // Best-effort draft persistence.
     });
@@ -924,6 +1021,7 @@ ui.submitButton.addEventListener("click", async () => {
 
 ui.intervieweeChoiceReuse.addEventListener("change", () => {
   updateIntervieweeDecisionUi();
+  updateProfileSizePanel();
   persistPopupDraft().catch(() => {
     // Best-effort draft persistence.
   });
@@ -931,6 +1029,7 @@ ui.intervieweeChoiceReuse.addEventListener("change", () => {
 
 ui.intervieweeChoiceUpload.addEventListener("change", () => {
   updateIntervieweeDecisionUi();
+  updateProfileSizePanel();
   persistPopupDraft().catch(() => {
     // Best-effort draft persistence.
   });
@@ -962,6 +1061,7 @@ ui.uploadScopeDefault.addEventListener("change", () => {
       updatePrepActionButtonsVisibility();
     } else {
       autoResizeTextarea(element);
+      scheduleProfileSizePanelUpdate();
     }
   };
   element.addEventListener("input", saveDraft);
