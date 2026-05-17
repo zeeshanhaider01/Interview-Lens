@@ -9,6 +9,7 @@ from rest_framework.test import APITestCase
 from api.auth import Auth0User
 from api.models import InterviewPrediction, User
 from api.tasks import run_prediction_task
+from api.tests.helpers import mock_prediction_result
 
 # Use an in-process cache so tests never require a live Redis connection.
 TEST_CACHE = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
@@ -66,7 +67,7 @@ class PredictEndpointTests(APITestCase):
     @mock.patch("api.prediction_service.generate_questions")
     def test_endpoint_with_caching_disabled_calls_openai_directly(self, mock_generate):
         # Force feature flag OFF to ensure no caching/lock used
-        mock_resp = {"html": "<article>QA</article>"}
+        mock_resp = mock_prediction_result(markdown="# QA", marker="direct")
         mock_generate.return_value = mock_resp
 
         with override_settings(ENABLE_CACHING=False):
@@ -83,7 +84,7 @@ class PredictEndpointTests(APITestCase):
 
     @mock.patch("api.prediction_service.generate_questions")
     def test_endpoint_with_caching_enabled_uses_db_and_cache(self, mock_generate):
-        mock_resp = {"html": "<article>Cached</article>"}
+        mock_resp = mock_prediction_result(markdown="# Cached", marker="cached")
         mock_generate.return_value = mock_resp
         payload = {
             "interviewee": {"name": "Alice", "email": "a@x.com", "education": "CS", "experience": "2y"},
@@ -115,7 +116,8 @@ class PredictEndpointTests(APITestCase):
 
     @mock.patch("api.prediction_service.generate_questions")
     def test_task_marks_prediction_completed(self, mock_generate):
-        mock_generate.return_value = {"html": "<article>Task result</article>"}
+        mock_resp = mock_prediction_result(markdown="# Task result", marker="task")
+        mock_generate.return_value = mock_resp
         user = User.objects.create(auth0_sub="test|task", email="task@example.com")
         InterviewPrediction.objects.create(
             fingerprint="task-fingerprint",
@@ -138,7 +140,7 @@ class PredictEndpointTests(APITestCase):
         db_obj = InterviewPrediction.objects.get(fingerprint="task-fingerprint", user=user)
         self.assertEqual(task_result["response_status"], 200)
         self.assertEqual(db_obj.status, InterviewPrediction.STATUS_COMPLETED)
-        self.assertEqual(json.loads(db_obj.result_json), {"html": "<article>Task result</article>"})
+        self.assertEqual(json.loads(db_obj.result_json), mock_resp)
 
     def test_endpoint_returns_running_when_prediction_already_in_progress(self):
         user = User.objects.create(auth0_sub="test|predict-endpoint", email="a@x.com")

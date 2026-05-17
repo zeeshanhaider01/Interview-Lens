@@ -14,6 +14,7 @@ from api.models import (
     User,
 )
 from api.tasks import run_prediction_task
+from api.tests.helpers import mock_prediction_result
 
 TEST_CACHE = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
@@ -413,7 +414,9 @@ class PrepSessionEndpointTests(APITestCase):
 
     @mock.patch("api.prediction_service.generate_questions")
     def test_submit_profile_reuses_completed_prediction_without_requeue(self, mock_generate):
-        mock_generate.return_value = {"html": "<article>Cached prep questions</article>"}
+        mock_generate.return_value = mock_prediction_result(
+            markdown="# Cached prep", marker="repeat"
+        )
         db_user = User.objects.create(auth0_sub="test|repeat-prep", email="repeat@example.com")
         prep_session = PrepSession.objects.create(user=db_user, title="Repeat prep")
         self.client.force_authenticate(
@@ -465,16 +468,17 @@ class PrepSessionEndpointTests(APITestCase):
         self.assertEqual(ready_response.status_code, 201)
         self.assertEqual(repeat_response.status_code, 200)
         self.assertEqual(repeat_response.json()["prediction"]["status"], "COMPLETED")
-        self.assertEqual(
-            repeat_response.json()["prediction"]["result"],
-            {"html": "<article>Cached prep questions</article>"},
-        )
+        result = repeat_response.json()["prediction"]["result"]
+        self.assertEqual(result["markdown"], "# Cached prep")
+        self.assertEqual(len(result["topics"]), 4)
         repeat_delay.assert_not_called()
         self.assertEqual(mock_generate.call_count, 1)
 
     @mock.patch("api.prediction_service.generate_questions")
     def test_get_prep_prediction_returns_completed_result_after_task_finishes(self, mock_generate):
-        mock_generate.return_value = {"html": "<article>Async prep questions</article>"}
+        mock_generate.return_value = mock_prediction_result(
+            markdown="# Async prep", marker="async"
+        )
         db_user = User.objects.create(auth0_sub="test|prep-status", email="status@example.com")
         prep_session = PrepSession.objects.create(user=db_user, title="Status prep")
         self.client.force_authenticate(
@@ -532,7 +536,6 @@ class PrepSessionEndpointTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["pipeline_status"], "READY_FOR_TOPIC_GENERATION")
         self.assertEqual(response.json()["prediction"]["status"], "COMPLETED")
-        self.assertEqual(
-            response.json()["prediction"]["result"],
-            {"html": "<article>Async prep questions</article>"},
-        )
+        result = response.json()["prediction"]["result"]
+        self.assertEqual(result["markdown"], "# Async prep")
+        self.assertEqual(len(result["topics"]), 4)
