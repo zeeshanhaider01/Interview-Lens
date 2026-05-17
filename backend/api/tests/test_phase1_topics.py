@@ -1,7 +1,8 @@
 import json
 from unittest import mock
 
-from django.test import TestCase
+from django.core.cache import cache
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from rest_framework.test import APITestCase
 
@@ -16,6 +17,9 @@ from api.models import InterviewPrediction, PredictionTopic, PrepSession, User
 from api.prediction_service import compute_fingerprint, execute_prediction_job
 from api.profile_trim import trim_predict_person, trim_profile_field
 from api.topic_service import replace_prediction_topics
+
+# In-process cache — CI has no Redis (see deploy.yml test job).
+TEST_CACHE = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
 SAMPLE_TOPICS = [
     {
@@ -133,7 +137,11 @@ class TopicPersistenceTests(TestCase):
         self.assertEqual(rows[0]["topic_key"], "system-design")
 
 
+@override_settings(CACHES=TEST_CACHE)
 class ExecutePredictionJobIntegrationTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
     @mock.patch("api.prediction_service.generate_questions")
     def test_persists_topics_on_completion(self, mock_generate):
         mock_generate.return_value = sample_prediction_result()
@@ -159,7 +167,12 @@ class ExecutePredictionJobIntegrationTests(TestCase):
         self.assertEqual(pred.topics.count(), 4)
 
 
+@override_settings(CACHES=TEST_CACHE)
 class GetPrepPredictionTopicsTests(APITestCase):
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+
     @mock.patch("api.prediction_service.generate_questions")
     def test_get_prep_prediction_includes_topics(self, mock_generate):
         mock_generate.return_value = sample_prediction_result()
