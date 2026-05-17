@@ -13,73 +13,69 @@ class AIClientError(Exception):
 
 
 # Bump when changing PROMPT_SYSTEM so clients can pass prompt_version to invalidate cache.
-PROMPT_VERSION = "4"
+PROMPT_VERSION = "5"
+OUTPUT_MODE = "topics_v1"
+ANTHROPIC_MAX_OUTPUT_TOKENS = 3072
+
 
 PROMPT_SYSTEM = """\
 You are InterviewerLens — an expert at predicting what a specific interviewer will ask a specific candidate in a job interview.
 
 ## Mission
-Given two LinkedIn profiles captured by our browser extension, produce a prioritized list of **interview topics** and **questions that Interviewer B will likely ask Interviewee A**.
+Given two LinkedIn profiles captured by our browser extension, produce a prioritized **topic map** for Interviewee A preparing to be interviewed by Interviewer B.
 
-- **Interviewee (A)** — the candidate preparing for the interview (`interviewee` in the input JSON).
-- **Interviewer (B)** — the person who will conduct the interview (`interviewer` in the input JSON).
+- **Interviewee (A)** — the candidate (`interviewee` in the input JSON).
+- **Interviewer (B)** — the person conducting the interview (`interviewer` in the input JSON).
 
-Every topic and question must help A prepare for what **B** is likely to ask — not generic interview advice.
+Topics must help A prepare for what **B** is likely to cover — not generic interview advice. Do **not** write full interview question lists in this step.
 
 ## Input
 You receive one JSON object with:
 - `interviewee` — fields: `name`, `email`, `education`, `experience`
 - `interviewer` — fields: `name`, `education`, `experience`
-- `interview_context` — fields: `target_role`, `target_company` (the role and company **A is interviewing for**, from the user's prep session)
+- `interview_context` — fields: `target_role`, `target_company` (role and company **A is interviewing for**)
 
-The `experience` field is a text block scraped from LinkedIn. It may contain labeled sections such as EXPERIENCE, EDUCATION, CERTIFICATIONS, PROJECTS, SKILLS, and HONORS_AWARDS. Data can be incomplete, duplicated, or sparse.
+The `experience` field is scraped LinkedIn text (EXPERIENCE, EDUCATION, SKILLS, etc.). Data may be incomplete or sparse.
 
-## Interview context (when `target_role` or `target_company` are non-empty)
-- **Calibrate every topic and question to `target_role`** — depth, scope, and seniority must match that role (e.g. Junior vs Staff), not only B's title.
-- B still interviews from their own expertise, but questions must assess **fit for the stated role**.
-- Use `target_company` for company-aware topics only when grounded in the profiles or safe public knowledge. Do not invent internal tools, teams, or culture details.
-- If `target_role` or `target_company` is empty, rely on both profiles only (same as before).
+## Interview context (when non-empty)
+- Calibrate topics to `target_role` (seniority, scope, depth).
+- Use `target_company` only when grounded in profiles or safe public knowledge.
+- If empty, rely on both profiles only.
 
 **Grounding rules (mandatory):**
-- Use only facts present in the provided profiles. Do not invent employers, titles, dates, tools, or credentials.
-- When evidence is thin, include fewer topics and say so briefly in the summary — do not fill gaps with assumptions.
-- Anchor each topic to something specific in B's profile (and usually something on A's profile that B would probe).
+- Use only facts in the provided profiles. Do not invent employers, tools, or credentials.
+- When evidence is thin, return fewer topics (minimum 4) and note gaps in the summary.
+- Anchor each topic to evidence from B's profile (and usually something on A's profile B would probe).
 
-## Internal workflow (think through this; do NOT include these steps in the output)
-1. **Map B** — primary expertise (longest/deepest work), secondary areas, seniority/role lens, recurring tools/domains, signals from projects, certs, and honors.
-2. **Map A** — strongest experiences, headline skills, and anything B would verify: gaps, short tenures, role changes, or ambitious claims.
-3. **Match A ↔ B** — overlap zones (B's expertise meets A's background) → highest priority; probe zones (B is strong where A is thin or claims are unverified) → targeted depth questions.
-4. **Draft topics** — 6–12 themes B would realistically cover; under each, write questions B would ask A in the first person ("you/your") or as direct interview questions.
+## Internal workflow (do NOT include in output)
+1. Map B — expertise, seniority, tools, domains.
+2. Map A — strengths, gaps, claims B would verify.
+3. Match A ↔ B — overlap zones = highest priority; probe zones = medium/lower.
+4. Draft **6–10 topics** B would realistically cover (never more than 12).
 
-## Question quality rules
-- Questions must sound like **B interviewing A** — not textbook drills unless B's profile clearly cares about that area.
-- Each question must connect to **both profiles** when possible (what B knows × what A has claimed or done).
-- Vary question types across the report where relevant: technical depth, trade-offs/breadth, behavioral (past work), situational, and verification of gaps or claims on A's profile.
-- Minimum per topic: **5** questions for 🔴 HIGH, **3** for 🟡 MEDIUM, **2** for 🟢 LOWER.
-- For 🔴 HIGH topics only: after **each** numbered question, add one line:
-  > 🔍 **Follow-up:** [a sharper probe B would ask next]
-- If length is tight, complete all 🔴 HIGH topics first, then 🟡, then 🟢.
-
-## Likelihood labels (use exactly one per topic heading)
-- 🔴 **HIGH** — Core area of B's expertise **and** clear overlap with A's experience, skills, or projects.
-- 🟡 **MEDIUM** — B's secondary expertise, standard for B's seniority/role, or role-relevant but weaker overlap with A.
-- 🟢 **LOWER** — Culture fit, communication, leadership, or adjacent topics B might touch briefly.
+## Likelihood labels (exactly one per topic)
+- **HIGH** — Core B expertise with clear overlap on A's background.
+- **MEDIUM** — B's secondary expertise or role-relevant with weaker overlap.
+- **LOWER** — Culture, communication, leadership, or brief adjacent areas.
 
 ## Output contract
-Return **only** a valid JSON object with a single key `markdown` (no surrounding prose, no markdown code fences around the JSON).
+Return **only** a valid JSON object (no prose before/after, no markdown code fences around the JSON) with these keys:
 
-The `markdown` value is plain Markdown (no HTML, no code fences inside it) with this structure:
+- `output_mode`: must be `"topics_v1"`
+- `markdown`: plain Markdown summary for the dashboard (no HTML, no code fences inside):
+  1. `# 🎯 Interview Prep: [A's name] ← topics from [B's name or role]`
+  2. `## 🔎 Why [B] will focus here` — 3–5 bullets citing B's profile
+  3. `## 📋 Topic overview` — numbered list of topic titles with likelihood badges (no per-topic question lists)
+  4. `## 💡 Prep priorities for [A]` — 4–6 concise bullets
+- `topics`: array of 6–10 objects (max 12), each with:
+  - `topic_key`: lowercase slug, e.g. `system-design`
+  - `title`: short topic name
+  - `emoji`: one tasteful emoji (vary across topics)
+  - `likelihood`: `HIGH`, `MEDIUM`, or `LOWER`
+  - `why`: one sentence tied to profile evidence
+  - `study_anchors`: array of 2–4 short strings (skills, concepts, or resume lines to review)
 
-1. `# 🎯 Interview Prep: [A's name] ← questions from [B's name or role from profile]`
-2. `## 🔎 Why [B] will ask these` — 3–5 bullets citing specific evidence from B's profile (helps A understand the prediction).
-3. For each topic: `## [emoji] [Topic name] | [🔴 HIGH / 🟡 MEDIUM / 🟢 LOWER]`
-   - Optional one line: *Why this topic:* [one sentence tied to profile evidence]
-   - Numbered list of questions (and follow-ups for 🔴 HIGH only)
-4. `## 💡 Prep priorities for [A]` — 4–6 concise, prioritized bullets telling A what to rehearse for **this** B; each bullet must reference something specific from B's profile.
-
-**Emojis:** Use tasteful emojis in all section headings — main title, summary, every topic, and prep priorities. Pick one emoji per topic that fits the subject (vary them; do not repeat the same emoji on every topic). Draw from this palette: 🧠 ⚙️ 📈 🎯 🔍 💡 🎙️ 📋 🏆 🔬 (and similar professional tones). Examples: 🧠 for architecture/deep technical topics, ⚙️ for implementation/engineering, 📈 for growth/metrics/leadership impact, 🎙️ for communication/behavioral, 📋 for process/planning, 🏆 for achievements/competition, 🔬 for research/R&D. The likelihood badge (🔴/🟡/🟢) stays separate after the topic name.
-
-Keep questions specific, senior-level, and interview-realistic.\
+Use tasteful emojis in markdown headings. Keep the markdown concise so the JSON fits in the token budget.\
 """
 
 
@@ -146,29 +142,89 @@ def _extract_json_obj(text):
     return None
 
 
-def _parse_markdown_payload(content):
-    content = _strip_markdown_fence(content)
+def _looks_truncated_json(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not stripped:
+        return True
+    if not stripped.endswith("}"):
+        return True
+    try:
+        json.loads(stripped)
+        return False
+    except json.JSONDecodeError:
+        return True
 
-    parsed = _extract_json_obj(content)
-    if parsed is None:
-        # Model returned raw Markdown without a JSON wrapper
-        parsed = {"markdown": content}
 
-    # Prefer the new 'markdown' key; fall back to legacy 'html' key for old cached records
-    markdown = parsed.get("markdown") or parsed.get("html") or ""
-    markdown = markdown.strip()
+def _normalize_topics_list(raw_topics):
+    if not isinstance(raw_topics, list):
+        return []
+    normalized = []
+    for index, item in enumerate(raw_topics):
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        anchors = item.get("study_anchors") or []
+        if isinstance(anchors, str):
+            anchors = [anchors]
+        if not isinstance(anchors, list):
+            anchors = []
+        normalized.append(
+            {
+                "topic_key": str(item.get("topic_key") or "").strip(),
+                "title": title,
+                "emoji": str(item.get("emoji") or "").strip(),
+                "likelihood": str(item.get("likelihood") or "MEDIUM").strip().upper(),
+                "why": str(item.get("why") or "").strip(),
+                "study_anchors": [str(a).strip() for a in anchors if str(a).strip()][:8],
+                "sort_order": index,
+            }
+        )
+    return normalized
 
-    # Guard against double-wrapped JSON: some models echo back the output format
-    # example from the system prompt, producing {"markdown": "{\"markdown\": \"...\"}"}
-    # instead of {"markdown": "# Heading\n..."}.  Unwrap one extra level if needed.
+
+def _validate_prediction_payload(parsed: dict, *, raw_content: str = ""):
+    if not isinstance(parsed, dict):
+        raise AIClientError("Model response was not a JSON object.")
+
+    if _looks_truncated_json(raw_content):
+        raise AIClientError("Model response appears truncated (incomplete JSON).")
+
+    markdown = (parsed.get("markdown") or parsed.get("html") or "").strip()
+    topics = _normalize_topics_list(parsed.get("topics"))
+
     if markdown.startswith("{"):
         inner = _extract_json_obj(markdown)
         if isinstance(inner, dict):
-            inner_md = inner.get("markdown") or inner.get("html") or ""
+            inner_md = (inner.get("markdown") or inner.get("html") or "").strip()
             if inner_md:
-                markdown = inner_md.strip()
+                markdown = inner_md
+            if not topics:
+                topics = _normalize_topics_list(inner.get("topics"))
 
-    return {"markdown": markdown}
+    if not markdown and not topics:
+        raise AIClientError("Model response missing both markdown summary and topics list.")
+
+    if len(topics) < 4:
+        raise AIClientError(
+            f"Model returned too few topics ({len(topics)}); expected at least 4."
+        )
+
+    return {
+        "output_mode": OUTPUT_MODE,
+        "markdown": markdown,
+        "topics": topics,
+    }
+
+
+def _parse_prediction_payload(content):
+    content = _strip_markdown_fence(content)
+    parsed = _extract_json_obj(content)
+    if parsed is None:
+        raise AIClientError("Model response was not valid JSON.")
+
+    return _validate_prediction_payload(parsed, raw_content=content)
 
 
 def _raise_http_error(provider_name, response, exc):
@@ -276,7 +332,6 @@ def _resolve_provider_config():
             model=ai_model or openai_model,
         )
 
-    # Keep backwards compatibility for the generic AI_API_KEY path.
     if generic_key and explicit_provider in ("anthropic", "openai"):
         if explicit_provider == "anthropic":
             available_configs["anthropic"] = ProviderConfig(
@@ -291,7 +346,6 @@ def _resolve_provider_config():
                 model=ai_model or openai_model,
             )
 
-    # If only a generic key exists, use default provider as a fallback.
     if generic_key and not available_configs:
         fallback_provider = context.default_provider or "anthropic"
         fallback_model = anthropic_model if fallback_provider == "anthropic" else openai_model
@@ -306,12 +360,18 @@ def _resolve_provider_config():
             "No AI provider API key configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY in backend/.env"
         )
 
-    # Explicit provider always wins, independent of selected strategy.
     if explicit_provider:
         return _select_explicit_provider(context, available_configs)
 
     selector = SELECTION_STRATEGIES.get(context.strategy, _select_auto_provider)
     return selector(context, available_configs)
+
+
+def _check_stop_reason(provider: str, data: dict):
+    if provider == "anthropic":
+        stop_reason = data.get("stop_reason") or ""
+        if stop_reason == "max_tokens":
+            raise AIClientError("Model output was truncated (max_tokens).")
 
 
 def _generate_with_openai(config, user_payload):
@@ -322,6 +382,7 @@ def _generate_with_openai(config, user_payload):
             {"role": "user", "content": json.dumps(user_payload)},
         ],
         "response_format": {"type": "json_object"},
+        "max_tokens": ANTHROPIC_MAX_OUTPUT_TOKENS,
     }
     headers = {"Authorization": f"Bearer {config.api_key}", "Content-Type": "application/json"}
 
@@ -352,14 +413,19 @@ def _generate_with_openai(config, user_payload):
     except Exception as exc:
         raise AIClientError(f"Unexpected error talking to OpenAI: {exc}") from exc
 
-    content = data["choices"][0]["message"]["content"]
-    return _parse_markdown_payload(content)
+    choice = data["choices"][0]
+    finish_reason = choice.get("finish_reason") or ""
+    if finish_reason == "length":
+        raise AIClientError("Model output was truncated (max_tokens).")
+
+    content = choice["message"]["content"]
+    return _parse_prediction_payload(content)
 
 
 def _generate_with_anthropic(config, user_payload):
     body = {
         "model": config.model,
-        "max_tokens": 8000,
+        "max_tokens": ANTHROPIC_MAX_OUTPUT_TOKENS,
         "system": PROMPT_SYSTEM,
         "messages": [
             {"role": "user", "content": json.dumps(user_payload)},
@@ -389,8 +455,9 @@ def _generate_with_anthropic(config, user_payload):
     except Exception as exc:
         raise AIClientError(f"Unexpected error talking to Anthropic: {exc}") from exc
 
+    _check_stop_reason("anthropic", data)
     content = _parse_model_content(data.get("content", []))
-    return _parse_markdown_payload(content)
+    return _parse_prediction_payload(content)
 
 
 PROVIDER_HANDLERS = {
