@@ -15,11 +15,13 @@ from .models import (
     User,
 )
 from .prediction_service import (
+    enrich_completed_result,
     get_prediction_state,
     mark_prediction_enqueue_failed,
     reserve_prediction_job,
     run_prediction_pipeline,
 )
+from .profile_trim import trim_predict_person
 from .serializers import (
     IntervieweeBaselineProfileSerializer,
     PredictRequestSerializer,
@@ -86,11 +88,14 @@ def build_predict_payload_from_prep_session(prep_session, user_email=None):
     )
 
 
-def build_prediction_response(payload, response_status):
+def build_prediction_response(payload, response_status, *, db_user=None, fingerprint=None):
     if response_status == status.HTTP_200_OK:
+        result = payload
+        if db_user and fingerprint:
+            result = _enrich_result_with_topics(db_user, fingerprint, payload)
         return {
             "status": "COMPLETED",
-            "result": payload,
+            "result": result,
         }
 
     response_body = {"status": payload.get("status", "UNKNOWN")}
@@ -98,6 +103,14 @@ def build_prediction_response(payload, response_status):
         if key in payload:
             response_body[key] = payload[key]
     return response_body
+
+
+def _enrich_result_with_topics(db_user, fingerprint, payload):
+    try:
+        pred_obj = InterviewPrediction.objects.get(fingerprint=fingerprint, user=db_user)
+    except InterviewPrediction.DoesNotExist:
+        return payload
+    return enrich_completed_result(pred_obj, payload)
 
 
 def start_prediction_job(
@@ -140,8 +153,8 @@ def start_prediction_job(
                 fingerprint,
                 f"Queue error: {exc}",
             )
-            return {"status": "FAILED", "error": f"Queue error: {exc}"}, status.HTTP_500_INTERNAL_SERVER_ERROR
-    return payload, response_status
+            return {"status": "FAILED", "error": f"Queue error: {exc}"}, status.HTTP_500_INTERNAL_SERVER_ERROR, fingerprint
+    return payload, response_status, fingerprint
 
 
 def build_dashboard_url(prep_session):
@@ -233,17 +246,21 @@ def build_predict_payload_from_profile_state(profile_state, user_email=None, pre
 
     interviewer_record = profile_state["interviewer_submission"]
     interviewer_sections = interviewer_record.extracted_sections
-    interviewee = {
-        "name": _profile_display_name(interviewee_record, "Interviewee"),
-        "email": user_email or "unknown@example.com",
-        "education": stringify_section(interviewee_sections.get("education")) or "Not provided",
-        "experience": normalize_sections_to_text(interviewee_sections) or "Not provided",
-    }
-    interviewer = {
-        "name": _profile_display_name(interviewer_record, "Interviewer"),
-        "education": stringify_section(interviewer_sections.get("education")) or "Not provided",
-        "experience": normalize_sections_to_text(interviewer_sections) or "Not provided",
-    }
+    interviewee = trim_predict_person(
+        {
+            "name": _profile_display_name(interviewee_record, "Interviewee"),
+            "email": user_email or "unknown@example.com",
+            "education": stringify_section(interviewee_sections.get("education")) or "Not provided",
+            "experience": normalize_sections_to_text(interviewee_sections) or "Not provided",
+        }
+    )
+    interviewer = trim_predict_person(
+        {
+            "name": _profile_display_name(interviewer_record, "Interviewer"),
+            "education": stringify_section(interviewer_sections.get("education")) or "Not provided",
+            "experience": normalize_sections_to_text(interviewer_sections) or "Not provided",
+        }
+    )
     interview_context = build_interview_context(prep_session)
     return interviewee, interviewer, interview_context
 
@@ -261,7 +278,7 @@ def predict_questions(request):
     interview_context = build_interview_context()
     db_user = get_or_create_db_user(request.user)
     if getattr(settings, "ENABLE_CACHING", True):
-        payload, response_status = start_prediction_job(
+        payload, response_status, _fingerprint = start_prediction_job(
             db_user,
             request.user.id,
             interviewee,
@@ -319,7 +336,12 @@ def compute_prep_session_row(prep_session, db_user, user_identifier, *, is_lates
         interview_context=interview_context,
     )
     prediction = (
-        build_prediction_response(payload, response_status)
+        build_prediction_response(
+            payload,
+            response_status,
+            db_user=db_user,
+            fingerprint=fingerprint,
+        )
         if payload is not None
         else {"status": "NOT_STARTED", "fingerprint": fingerprint}
     )
@@ -377,7 +399,12 @@ def build_prep_session_detail(prep_session, db_user, user_identifier):
             interview_context=interview_context,
         )
         prediction = (
-            build_prediction_response(payload, response_status)
+            build_prediction_response(
+                payload,
+                response_status,
+                db_user=db_user,
+                fingerprint=fingerprint,
+            )
             if payload is not None
             else {"status": "NOT_STARTED", "fingerprint": fingerprint}
         )
@@ -596,8 +623,9 @@ def submit_prep_profile(request, prep_id):
             user_email=db_user.email,
             prep_session=prep_session,
         )
+        payload_fp = None
         if getattr(settings, "ENABLE_CACHING", True):
-            prediction_payload, prediction_status = start_prediction_job(
+            prediction_payload, prediction_status, payload_fp = start_prediction_job(
                 db_user,
                 request.user.id,
                 interviewee,
@@ -613,7 +641,19 @@ def submit_prep_profile(request, prep_id):
                 interviewer=interviewer,
                 interview_context=interview_context,
             )
-        prediction = build_prediction_response(prediction_payload, prediction_status)
+            _, _, payload_fp = get_prediction_state(
+                user_identifier=request.user.id,
+                db_user=db_user,
+                interviewee=interviewee,
+                interviewer=interviewer,
+                interview_context=interview_context,
+            )
+        prediction = build_prediction_response(
+            prediction_payload,
+            prediction_status,
+            db_user=db_user,
+            fingerprint=payload_fp,
+        )
 
     return Response(
         {
@@ -670,7 +710,12 @@ def get_prep_prediction(request, prep_id):
         interview_context=interview_context,
     )
     prediction = (
-        build_prediction_response(payload, response_status)
+        build_prediction_response(
+            payload,
+            response_status,
+            db_user=db_user,
+            fingerprint=fingerprint,
+        )
         if payload is not None
         else {"status": "NOT_STARTED", "fingerprint": fingerprint}
     )
