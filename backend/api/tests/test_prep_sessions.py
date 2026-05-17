@@ -9,12 +9,18 @@ from rest_framework.test import APITestCase
 from api.auth import Auth0User
 from api.models import (
     IntervieweeBaselineProfile,
+    InterviewPrediction,
     PrepProfileSubmission,
     PrepSession,
     User,
 )
+from api.prediction_service import compute_fingerprint
 from api.tasks import run_prediction_task
 from api.tests.helpers import mock_prediction_result
+from api.views import (
+    build_predict_payload_from_profile_state,
+    resolve_session_profile_state,
+)
 
 TEST_CACHE = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
@@ -539,3 +545,138 @@ class PrepSessionEndpointTests(APITestCase):
         result = response.json()["prediction"]["result"]
         self.assertEqual(result["markdown"], "# Async prep")
         self.assertEqual(len(result["topics"]), 4)
+
+    def _create_ready_session(self, *, auth_sub, email, title="Row status prep"):
+        db_user = User.objects.create(auth0_sub=auth_sub, email=email)
+        prep_session = PrepSession.objects.create(user=db_user, title=title)
+        PrepProfileSubmission.objects.create(
+            prep_session=prep_session,
+            user=db_user,
+            role=PrepProfileSubmission.ROLE_INTERVIEWEE,
+            extracted_sections={
+                "experience": ["2 years Python"],
+                "education": ["BS Computer Science"],
+            },
+            normalized_text="EXPERIENCE:\n2 years Python\n\nEDUCATION:\nBS Computer Science",
+        )
+        PrepProfileSubmission.objects.create(
+            prep_session=prep_session,
+            user=db_user,
+            role=PrepProfileSubmission.ROLE_INTERVIEWER,
+            extracted_sections={
+                "experience": ["Staff Engineer"],
+                "education": ["MS Computer Science"],
+            },
+            normalized_text="EXPERIENCE:\nStaff Engineer\n\nEDUCATION:\nMS Computer Science",
+        )
+        return db_user, prep_session
+
+    def _prediction_fingerprint(self, prep_session, db_user, user_identifier):
+        profile_state = resolve_session_profile_state(prep_session, db_user)
+        interviewee, interviewer, interview_context = build_predict_payload_from_profile_state(
+            profile_state,
+            user_email=db_user.email,
+            prep_session=prep_session,
+        )
+        return compute_fingerprint(
+            user_identifier,
+            interviewee,
+            interviewer,
+            "",
+            "",
+            interview_context,
+        )
+
+    def test_list_row_status_ready_to_generate_when_not_started(self):
+        auth_sub = "test|row-not-started"
+        db_user, prep_session = self._create_ready_session(
+            auth_sub=auth_sub,
+            email="not-started@example.com",
+        )
+        self.client.force_authenticate(user=Auth0User({"sub": auth_sub, "email": db_user.email}))
+
+        list_url = reverse("prep_sessions")
+        response = self.client.get(list_url)
+
+        self.assertEqual(response.status_code, 200)
+        row = next(r for r in response.json()["results"] if r["prep_id"] == str(prep_session.prep_id))
+        self.assertEqual(row["prediction_status"], "NOT_STARTED")
+        self.assertEqual(row["row_status"], "ready_to_generate")
+
+    def test_list_row_status_generating_when_running(self):
+        auth_sub = "test|row-running"
+        db_user, prep_session = self._create_ready_session(
+            auth_sub=auth_sub,
+            email="running@example.com",
+        )
+        fingerprint = self._prediction_fingerprint(prep_session, db_user, auth_sub)
+        InterviewPrediction.objects.create(
+            fingerprint=fingerprint,
+            user=db_user,
+            prep_session=prep_session,
+            status=InterviewPrediction.STATUS_RUNNING,
+        )
+        self.client.force_authenticate(user=Auth0User({"sub": auth_sub, "email": db_user.email}))
+
+        response = self.client.get(reverse("prep_sessions"))
+        row = next(r for r in response.json()["results"] if r["prep_id"] == str(prep_session.prep_id))
+        self.assertEqual(row["prediction_status"], "RUNNING")
+        self.assertEqual(row["row_status"], "generating")
+
+    def test_list_row_status_ready_when_completed(self):
+        auth_sub = "test|row-ready"
+        db_user, prep_session = self._create_ready_session(
+            auth_sub=auth_sub,
+            email="ready@example.com",
+        )
+        fingerprint = self._prediction_fingerprint(prep_session, db_user, auth_sub)
+        InterviewPrediction.objects.create(
+            fingerprint=fingerprint,
+            user=db_user,
+            prep_session=prep_session,
+            status=InterviewPrediction.STATUS_COMPLETED,
+            result_json=json.dumps(mock_prediction_result(marker="ready-row")),
+        )
+        self.client.force_authenticate(user=Auth0User({"sub": auth_sub, "email": db_user.email}))
+
+        response = self.client.get(reverse("prep_sessions"))
+        row = next(r for r in response.json()["results"] if r["prep_id"] == str(prep_session.prep_id))
+        self.assertEqual(row["prediction_status"], "COMPLETED")
+        self.assertEqual(row["row_status"], "ready")
+
+    @mock.patch("api.views.run_prediction_task.delay")
+    def test_list_prep_sessions_does_not_enqueue_prediction(self, mock_delay):
+        auth_sub = "test|list-readonly"
+        db_user, prep_session = self._create_ready_session(
+            auth_sub=auth_sub,
+            email="list-readonly@example.com",
+        )
+        fingerprint = self._prediction_fingerprint(prep_session, db_user, auth_sub)
+        InterviewPrediction.objects.create(
+            fingerprint=fingerprint,
+            user=db_user,
+            prep_session=prep_session,
+            status=InterviewPrediction.STATUS_RUNNING,
+        )
+        self.client.force_authenticate(user=Auth0User({"sub": auth_sub, "email": db_user.email}))
+
+        list_url = reverse("prep_sessions")
+        self.client.get(list_url)
+        self.client.get(list_url)
+
+        mock_delay.assert_not_called()
+
+    @mock.patch("api.views.run_prediction_task.delay")
+    def test_get_prep_prediction_does_not_enqueue_prediction(self, mock_delay):
+        auth_sub = "test|prediction-readonly"
+        db_user, prep_session = self._create_ready_session(
+            auth_sub=auth_sub,
+            email="prediction-readonly@example.com",
+        )
+        self.client.force_authenticate(user=Auth0User({"sub": auth_sub, "email": db_user.email}))
+
+        status_url = reverse("get_prep_prediction", kwargs={"prep_id": str(prep_session.prep_id)})
+        self.client.get(status_url)
+        self.client.get(status_url)
+
+        mock_delay.assert_not_called()

@@ -351,8 +351,10 @@ def compute_prep_session_row(prep_session, db_user, user_identifier, *, is_lates
         row["row_status"] = "ready"
     elif pred_status == "FAILED":
         row["row_status"] = "failed"
-    else:
+    elif pred_status == "RUNNING":
         row["row_status"] = "generating"
+    else:
+        row["row_status"] = "ready_to_generate"
 
     return row
 

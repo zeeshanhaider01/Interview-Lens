@@ -24,6 +24,8 @@ function rowStatusLabel(rowStatus) {
   switch (rowStatus) {
     case 'waiting_for_profiles':
       return 'Waiting for profiles'
+    case 'ready_to_generate':
+      return 'Ready to generate'
     case 'generating':
       return 'Generating'
     case 'ready':
@@ -43,6 +45,8 @@ function rowStatusVariant(rowStatus) {
       return 'danger'
     case 'generating':
       return 'warning'
+    case 'ready_to_generate':
+      return 'info'
     case 'waiting_for_profiles':
       return 'secondary'
     default:
@@ -201,8 +205,10 @@ export default function ProfileForm() {
     })
   }, [sessions, sessionFilter])
 
-  const loadSessions = useCallback(async () => {
-    setSessionsLoading(true)
+  const loadSessions = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setSessionsLoading(true)
+    }
     setSessionsError(null)
     try {
       const token = await getToken()
@@ -214,13 +220,24 @@ export default function ProfileForm() {
       setSessionsError(err?.response?.data?.detail || err.message || 'Failed to load prep sessions')
       setSessions([])
     } finally {
-      setSessionsLoading(false)
+      if (!silent) {
+        setSessionsLoading(false)
+      }
     }
   }, [apiBase, getToken])
 
   useEffect(() => {
     loadSessions()
   }, [loadSessions])
+
+  useEffect(() => {
+    const hasGenerating = sessions.some((s) => s.row_status === 'generating')
+    if (!hasGenerating) return undefined
+    const timer = window.setInterval(() => {
+      loadSessions({ silent: true })
+    }, 12000)
+    return () => window.clearInterval(timer)
+  }, [sessions, loadSessions])
 
   useEffect(() => {
     if (sessionsLoading) return
@@ -306,8 +323,10 @@ export default function ProfileForm() {
         if (cancelled) return
         setPredictionData(resp.data)
         const st = resp.data?.prediction?.status
-        if (st === 'RUNNING' || st === 'NOT_STARTED') {
+        if (st === 'RUNNING') {
           pollTimer = setTimeout(() => fetchPrediction(false), 3000)
+        } else if (st === 'COMPLETED' || st === 'FAILED') {
+          loadSessions({ silent: true })
         }
       } catch (err) {
         if (!cancelled) {
@@ -329,7 +348,7 @@ export default function ProfileForm() {
     }
   // predictionRefreshKey in deps allows manual re-trigger: incrementing it
   // causes the cleanup to cancel any pending poll and starts a fresh fetch.
-  }, [selectedPrepId, apiBase, getToken, predictionRefreshKey])
+  }, [selectedPrepId, apiBase, getToken, predictionRefreshKey, loadSessions])
 
   const manualRefreshPrediction = useCallback(() => {
     setPredictionRefreshKey((k) => k + 1)
@@ -347,9 +366,7 @@ export default function ProfileForm() {
     ? 'Updating…'
     : predictionData?.prediction?.status === 'FAILED'
       ? '↻ Retry'
-      : predictionData?.prediction?.status === 'COMPLETED'
-        ? '↻ Refresh Results'
-        : 'Fetch Results'
+      : '↻ Refresh results'
 
   const selectedSession = sessionDetail || sessions.find((s) => s.prep_id === selectedPrepId)
   const hasDefaultIntervieweeProfile = Boolean(sessionDetail?.has_default_interviewee_profile)
@@ -480,10 +497,11 @@ export default function ProfileForm() {
               size="sm"
               onClick={() => loadSessions()}
               disabled={sessionsLoading}
+              title="Updates session statuses in the list. Does not start generation."
               className="d-flex align-items-center gap-1 py-1"
             >
               {sessionsLoading ? <Spinner animation="border" size="sm" /> : <RefreshIcon />}
-              <span style={{ fontSize: '0.78rem' }}>Refresh</span>
+              <span style={{ fontSize: '0.78rem' }}>Reload list</span>
             </Button>
           </div>
 
@@ -870,8 +888,14 @@ export default function ProfileForm() {
                       </div>
                     )}
                   {predictionData.pipeline_status === 'READY_FOR_TOPIC_GENERATION' &&
-                    (predictionData.prediction?.status === 'RUNNING' ||
-                      predictionData.prediction?.status === 'NOT_STARTED') && (
+                    predictionData.prediction?.status === 'NOT_STARTED' && (
+                      <Alert variant="info" className="mb-0">
+                        Both profiles are ready. Submit them from the browser extension to start
+                        generation, then use Refresh results to check progress.
+                      </Alert>
+                    )}
+                  {predictionData.pipeline_status === 'READY_FOR_TOPIC_GENERATION' &&
+                    predictionData.prediction?.status === 'RUNNING' && (
                       <Alert variant="warning" className="mb-0">
                         Generating your interview prep… This page will update automatically.
                       </Alert>
