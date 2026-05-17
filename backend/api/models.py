@@ -66,6 +66,46 @@ class InterviewPrediction(models.Model):
         return f"{self.fingerprint} ({self.status})"
 
 
+class PredictionTopic(models.Model):
+    """One predicted interview topic from a completed InterviewPrediction run."""
+
+    LIKELIHOOD_HIGH = "HIGH"
+    LIKELIHOOD_MEDIUM = "MEDIUM"
+    LIKELIHOOD_LOWER = "LOWER"
+
+    LIKELIHOOD_CHOICES = [
+        (LIKELIHOOD_HIGH, "High"),
+        (LIKELIHOOD_MEDIUM, "Medium"),
+        (LIKELIHOOD_LOWER, "Lower"),
+    ]
+
+    prediction = models.ForeignKey(
+        InterviewPrediction,
+        on_delete=models.CASCADE,
+        related_name="topics",
+    )
+    topic_key = models.SlugField(max_length=120)
+    title = models.CharField(max_length=255)
+    emoji = models.CharField(max_length=16, blank=True, default="")
+    likelihood = models.CharField(max_length=10, choices=LIKELIHOOD_CHOICES, default=LIKELIHOOD_MEDIUM)
+    why = models.TextField(blank=True, default="")
+    study_anchors = models.JSONField(default=list, blank=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["prediction", "topic_key"],
+                name="unique_prediction_topic_key",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.prediction_id}::{self.topic_key}"
+
+
 class PrepSession(models.Model):
     """
     Represents one interview-preparation session for a user.
