@@ -8,8 +8,8 @@ from rest_framework.test import APITestCase
 
 from api.auth import Auth0User
 from api.models import (
-    InterviewPrediction,
     IntervieweeBaselineProfile,
+    InterviewPrediction,
     PrepProfileSubmission,
     PrepSession,
     User,
@@ -17,7 +17,10 @@ from api.models import (
 from api.prediction_service import compute_fingerprint
 from api.tasks import run_prediction_task
 from api.tests.helpers import mock_prediction_result
-from api.views import build_predict_payload_from_profile_state, resolve_session_profile_state
+from api.views import (
+    build_predict_payload_from_profile_state,
+    resolve_session_profile_state,
+)
 
 TEST_CACHE = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
