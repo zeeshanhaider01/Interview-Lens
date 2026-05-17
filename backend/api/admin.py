@@ -3,6 +3,7 @@ from django.contrib import admin
 from .models import (
     IntervieweeBaselineProfile,
     InterviewPrediction,
+    PredictionTopic,
     PrepProfileSubmission,
     PrepSession,
     User,
@@ -74,6 +75,12 @@ class PrepProfileSubmissionAdmin(ReadOnlyAdmin):
     )
 
 
+class PredictionTopicInline(ReadOnlyInline):
+    model = PredictionTopic
+    fields = ("sort_order", "topic_key", "title", "likelihood", "emoji")
+    readonly_fields = fields
+
+
 @admin.register(InterviewPrediction)
 class InterviewPredictionAdmin(ReadOnlyAdmin):
     list_display = ("fingerprint", "prep_session", "user", "status", "prompt_version", "last_success_at", "created_at")
@@ -84,6 +91,19 @@ class InterviewPredictionAdmin(ReadOnlyAdmin):
         "fingerprint", "prep_session", "user", "prompt_version", "regenerate_nonce",
         "status", "result_json", "error_text", "last_success_at",
         "created_at", "updated_at",
+    )
+    inlines = [PredictionTopicInline]
+
+
+@admin.register(PredictionTopic)
+class PredictionTopicAdmin(ReadOnlyAdmin):
+    list_display = ("id", "prediction", "topic_key", "title", "likelihood", "sort_order")
+    list_filter = ("likelihood",)
+    search_fields = ("topic_key", "title", "prediction__fingerprint")
+    ordering = ("prediction", "sort_order")
+    readonly_fields = (
+        "prediction", "topic_key", "title", "emoji", "likelihood",
+        "why", "study_anchors", "sort_order", "created_at",
     )
 
 

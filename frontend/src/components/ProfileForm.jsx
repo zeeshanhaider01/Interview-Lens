@@ -82,6 +82,45 @@ function extractMarkdown(result) {
   return raw
 }
 
+function likelihoodBadgeVariant(likelihood) {
+  if (likelihood === 'HIGH') return 'danger'
+  if (likelihood === 'MEDIUM') return 'warning'
+  return 'secondary'
+}
+
+function TopicList({ topics }) {
+  if (!topics?.length) return null
+  return (
+    <div className="mb-4">
+      <h6 className="text-primary mb-3">Interview topics</h6>
+      <div className="d-flex flex-column gap-2">
+        {topics.map((topic) => (
+          <Card key={topic.id || topic.topic_key} className="border-0 shadow-sm">
+            <Card.Body className="py-3">
+              <div className="d-flex justify-content-between align-items-start gap-2">
+                <div className="fw-semibold">
+                  {topic.emoji ? `${topic.emoji} ` : ''}
+                  {topic.title}
+                </div>
+                <Badge bg={likelihoodBadgeVariant(topic.likelihood)} className="flex-shrink-0">
+                  {topic.likelihood}
+                </Badge>
+              </div>
+              {topic.why && <div className="small text-muted mt-2">{topic.why}</div>}
+              {topic.study_anchors?.length > 0 && (
+                <div className="small mt-2">
+                  <span className="text-muted">Study: </span>
+                  {topic.study_anchors.join(' · ')}
+                </div>
+              )}
+            </Card.Body>
+          </Card>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function RefreshIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16">
@@ -800,20 +839,32 @@ export default function ProfileForm() {
                           : 'Waiting for both interviewee and interviewer profiles for this session. Submit the missing profile from the extension.'}
                     </Alert>
                   )}
-                  {predictionData.pipeline_status === 'READY_FOR_TOPIC_GENERATION' &&
+                                    {predictionData.pipeline_status === 'READY_FOR_TOPIC_GENERATION' &&
                     predictionData.prediction?.status === 'COMPLETED' &&
-                    (predictionData.prediction?.result?.markdown || predictionData.prediction?.result?.html) && (
-                      <div className="prose max-w-none mt-2">
+                    (predictionData.prediction?.result?.topics?.length > 0 ||
+                      predictionData.prediction?.result?.markdown ||
+                      predictionData.prediction?.result?.html) && (
+                      <div className="mt-2">
+                        <TopicList topics={predictionData.prediction.result.topics} />
                         {(() => {
                           const md = extractMarkdown(predictionData.prediction.result)
-                          if (md) {
-                            return (
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
-                            )
+                          if (!md) {
+                            if (predictionData.prediction.result.html) {
+                              return (
+                                <div
+                                  className="prose max-w-none"
+                                  dangerouslySetInnerHTML={{
+                                    __html: predictionData.prediction.result.html,
+                                  }}
+                                />
+                              )
+                            }
+                            return null
                           }
-                          /* Legacy fallback: old cached records that still contain raw HTML */
                           return (
-                            <div dangerouslySetInnerHTML={{ __html: predictionData.prediction.result.html }} />
+                            <div className="prose max-w-none">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
+                            </div>
                           )
                         })()}
                       </div>

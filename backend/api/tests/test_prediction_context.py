@@ -55,7 +55,7 @@ class ComputeFingerprintContextTests(TestCase):
             user_identifier="user-1",
             interviewee=self.interviewee,
             interviewer=self.interviewer,
-            prompt_version="4",
+            prompt_version="5",
         )
         fp_junior = compute_fingerprint(
             **base_kwargs,
@@ -72,7 +72,7 @@ class ComputeFingerprintContextTests(TestCase):
             user_identifier="user-1",
             interviewee=self.interviewee,
             interviewer=self.interviewer,
-            prompt_version="4",
+            prompt_version="5",
         )
         fp_a = compute_fingerprint(
             **base_kwargs,

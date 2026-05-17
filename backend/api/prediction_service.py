@@ -5,8 +5,16 @@ from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
-from .ai_client import AIClientError, PROMPT_VERSION, _normalize_interview_context, generate_questions
+from .ai_client import (
+    OUTPUT_MODE,
+    PROMPT_VERSION,
+    AIClientError,
+    _normalize_interview_context,
+    generate_questions,
+)
 from .models import InterviewPrediction
+from .profile_trim import trim_predict_person
+from .topic_service import replace_prediction_topics, topics_for_prediction
 
 
 def _effective_prompt_version(prompt_version=""):
@@ -42,6 +50,8 @@ def compute_fingerprint(
     if regenerate_nonce:
         digest.update(b"||r:")
         digest.update(str(regenerate_nonce).encode("utf-8"))
+    digest.update(b"||mode:")
+    digest.update(OUTPUT_MODE.encode("utf-8"))
     return digest.hexdigest()
 
 
@@ -199,7 +209,11 @@ def run_prediction_pipeline(
 ):
     if not getattr(settings, "ENABLE_CACHING", True):
         try:
-            return generate_questions(interviewee, interviewer, interview_context), 200
+            return generate_questions(
+                trim_predict_person(interviewee),
+                trim_predict_person(interviewer),
+                interview_context,
+            ), 200
         except AIClientError as exc:
             return {"status": "FAILED", "error": str(exc)}, 502
         except Exception as exc:
@@ -257,7 +271,13 @@ def execute_prediction_job(
         )
 
     try:
-        result = generate_questions(interviewee, interviewer, interview_context)
+        trimmed_interviewee = trim_predict_person(interviewee)
+        trimmed_interviewer = trim_predict_person(interviewer)
+        result = generate_questions(
+            trimmed_interviewee,
+            trimmed_interviewer,
+            interview_context,
+        )
         db_obj.result_json = json.dumps(result)
         db_obj.status = InterviewPrediction.STATUS_COMPLETED
         db_obj.error_text = ""
@@ -265,6 +285,7 @@ def execute_prediction_job(
         db_obj.save(
             update_fields=["result_json", "status", "error_text", "last_success_at", "updated_at"]
         )
+        replace_prediction_topics(db_obj, result.get("topics") or [])
 
         try:
             cache.set(result_key, json.dumps(result), timeout=result_ttl)
@@ -285,3 +306,15 @@ def execute_prediction_job(
         db_obj.save(update_fields=["status", "error_text", "updated_at"])
         cache.delete(lock_key)
         return {"status": "FAILED", "error": f"Server error: {exc}"}, 500
+
+
+def enrich_completed_result(db_obj, payload):
+    """Attach structured topics from DB to a completed prediction payload."""
+    if not isinstance(payload, dict):
+        return payload
+    if db_obj is None:
+        return payload
+    enriched = dict(payload)
+    if not enriched.get("topics"):
+        enriched["topics"] = topics_for_prediction(db_obj)
+    return enriched
