@@ -5,7 +5,13 @@ from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
-from .ai_client import AIClientError, OUTPUT_MODE, PROMPT_VERSION, _normalize_interview_context, generate_questions
+from .ai_client import (
+    OUTPUT_MODE,
+    PROMPT_VERSION,
+    AIClientError,
+    _normalize_interview_context,
+    generate_questions,
+)
 from .models import InterviewPrediction
 from .profile_trim import trim_predict_person
 from .topic_service import replace_prediction_topics, topics_for_prediction

@@ -6,17 +6,16 @@ from django.urls import reverse
 from rest_framework.test import APITestCase
 
 from api.ai_client import (
-    AIClientError,
     OUTPUT_MODE,
     PROMPT_VERSION,
+    AIClientError,
     _parse_prediction_payload,
 )
+from api.auth import Auth0User
 from api.models import InterviewPrediction, PredictionTopic, PrepSession, User
 from api.prediction_service import compute_fingerprint, execute_prediction_job
 from api.profile_trim import trim_predict_person, trim_profile_field
 from api.topic_service import replace_prediction_topics
-from api.auth import Auth0User
-
 
 SAMPLE_TOPICS = [
     {
@@ -207,7 +206,10 @@ class GetPrepPredictionTopicsTests(APITestCase):
                 content_type="application/json",
             )
 
-        from api.views import build_predict_payload_from_profile_state, resolve_session_profile_state
+        from api.views import (
+            build_predict_payload_from_profile_state,
+            resolve_session_profile_state,
+        )
 
         profile_state = resolve_session_profile_state(prep_session, db_user)
         interviewee, interviewer, interview_context = build_predict_payload_from_profile_state(

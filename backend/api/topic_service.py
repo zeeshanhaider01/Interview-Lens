@@ -4,7 +4,6 @@ from django.utils.text import slugify
 
 from .models import PredictionTopic
 
-
 LIKELIHOOD_ALIASES = {
     "HIGH": PredictionTopic.LIKELIHOOD_HIGH,
     "MEDIUM": PredictionTopic.LIKELIHOOD_MEDIUM,
