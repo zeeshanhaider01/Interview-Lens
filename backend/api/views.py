@@ -139,6 +139,12 @@ def start_prediction_job(
         regenerate_nonce=regenerate_nonce,
         prep_session=prep_session,
     )
+    if payload is not None and not should_enqueue:
+        generation_source = (
+            "cache" if response_status == status.HTTP_200_OK else "in_progress"
+        )
+        return payload, response_status, fingerprint, generation_source
+
     if should_enqueue:
         try:
             run_prediction_task.delay(
@@ -161,8 +167,11 @@ def start_prediction_job(
                 {"status": "FAILED", "error": f"Queue error: {exc}"},
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 fingerprint,
+                "failed",
             )
-    return payload, response_status, fingerprint
+        return payload, response_status, fingerprint, "queued"
+
+    return payload, response_status, fingerprint, "in_progress"
 
 
 def build_dashboard_url(prep_session):
@@ -206,13 +215,24 @@ def build_submit_profile_next_action(profile_state):
     return "SUBMIT_COUNTERPART_PROFILE"
 
 
-def build_generate_user_message(prediction):
+def build_generate_user_message(prediction, generation_source=None):
     prediction_status = (prediction or {}).get("status")
     if prediction_status == "COMPLETED":
+        if generation_source == "cache":
+            return (
+                "Loaded your saved interview prep for the current profiles. "
+                "Update a profile in the extension and generate again to refresh."
+            )
         return "Your interview prep is ready. Open the Interview Lens Dashboard to review it."
 
     if prediction_status == "FAILED":
         return "We could not generate prep right now. Open the Interview Lens Dashboard for details and retry options."
+
+    if generation_source == "in_progress":
+        return (
+            "Interview prep generation is already running for these profiles. "
+            "Use Refresh results to check progress."
+        )
 
     return (
         "Great! We received both profiles and started generating your interview prep. "
@@ -358,14 +378,16 @@ def predict_questions(request):
     interview_context = build_interview_context()
     db_user = get_or_create_db_user(request.user)
     if getattr(settings, "ENABLE_CACHING", True):
-        payload, response_status, _fingerprint = start_prediction_job(
-            db_user,
-            request.user.id,
-            interviewee,
-            interviewer,
-            prompt_version,
-            regenerate_nonce,
-            interview_context=interview_context,
+        payload, response_status, _fingerprint, _generation_source = (
+            start_prediction_job(
+                db_user,
+                request.user.id,
+                interviewee,
+                interviewer,
+                prompt_version,
+                regenerate_nonce,
+                interview_context=interview_context,
+            )
         )
     else:
         payload, response_status = run_prediction_pipeline(
@@ -826,14 +848,17 @@ def generate_prep_session_prediction(request, prep_id):
         )
     )
     payload_fp = None
+    generation_source = "sync"
     if getattr(settings, "ENABLE_CACHING", True):
-        prediction_payload, prediction_status, payload_fp = start_prediction_job(
-            db_user,
-            request.user.id,
-            interviewee,
-            interviewer,
-            prep_session=prep_session,
-            interview_context=interview_context,
+        prediction_payload, prediction_status, payload_fp, generation_source = (
+            start_prediction_job(
+                db_user,
+                request.user.id,
+                interviewee,
+                interviewer,
+                prep_session=prep_session,
+                interview_context=interview_context,
+            )
         )
     else:
         prediction_payload, prediction_status = run_prediction_pipeline(
@@ -850,6 +875,9 @@ def generate_prep_session_prediction(request, prep_id):
             interviewer=interviewer,
             interview_context=interview_context,
         )
+        generation_source = (
+            "cache" if prediction_status == status.HTTP_200_OK else "queued"
+        )
     prediction = build_prediction_response(
         prediction_payload,
         prediction_status,
@@ -861,7 +889,11 @@ def generate_prep_session_prediction(request, prep_id):
         {
             "prep_id": str(prep_session.prep_id),
             "prediction": prediction,
-            "user_message": build_generate_user_message(prediction),
+            "generation_source": generation_source,
+            "fingerprint": payload_fp,
+            "user_message": build_generate_user_message(
+                prediction, generation_source=generation_source
+            ),
             "next_action": "OPEN_DASHBOARD",
             "dashboard_url": build_dashboard_url(prep_session),
             **profile_state_response_fields(profile_state),
