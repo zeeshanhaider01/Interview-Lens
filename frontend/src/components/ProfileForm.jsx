@@ -366,12 +366,25 @@ export default function ProfileForm() {
     setGenerateError(null)
     try {
       const token = await getToken()
-      await axios.post(
+      const resp = await axios.post(
         `${apiBase}/api/prep-sessions/${encodeURIComponent(selectedPrepId)}/generate`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       )
-      setPredictionRefreshKey((k) => k + 1)
+      const body = resp.data
+      const servedFromCache =
+        body?.generation_source === 'cache' && body?.prediction?.status === 'COMPLETED'
+      if (body?.prediction) {
+        setPredictionData((prev) => ({
+          ...(prev || {}),
+          ...body,
+          prep_id: selectedPrepId,
+        }))
+        setPredictionError(null)
+      }
+      if (!servedFromCache) {
+        setPredictionRefreshKey((k) => k + 1)
+      }
       await Promise.all([loadSessions({ silent: true }), loadSessionDetail(selectedPrepId)])
     } catch (err) {
       setGenerateError(apiErrorMessage(err, 'Failed to generate interview prep'))
@@ -882,8 +895,9 @@ export default function ProfileForm() {
                   {predictionData.pipeline_status === 'READY_FOR_TOPIC_GENERATION' &&
                     predictionData.prediction?.status === 'NOT_STARTED' && (
                       <Alert variant="info" className="mb-0">
-                        Both profiles are saved on this session. Click Generate interview prep to start
-                        AI generation, then use Refresh results to check progress.
+                        Both profiles are saved on this session. Click Generate interview prep to run AI
+                        generation (or load saved results when profiles are unchanged), then use Refresh
+                        results to check progress.
                       </Alert>
                     )}
                   {predictionData.pipeline_status === 'READY_FOR_TOPIC_GENERATION' &&
