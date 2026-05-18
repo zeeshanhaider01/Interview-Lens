@@ -2,7 +2,6 @@
 import React from 'react'
 import { Navbar, Container, Nav, Dropdown, Image, Button } from 'react-bootstrap'
 import { useAuth0 } from '@auth0/auth0-react'
-import logo from '../assets/logo.svg'
 
 export default function Header() {
   const { isAuthenticated, user, loginWithRedirect, logout } = useAuth0()
@@ -10,9 +9,6 @@ export default function Header() {
   return (
     <Navbar bg="primary" data-bs-theme="dark" expand="lg" className="shadow-sm">
       <Container>
-        <Navbar.Brand href="#" className="d-flex align-items-center gap-2">
-          <img src={logo} alt="InterviewerLens" height={32} />
-        </Navbar.Brand>
         <Nav className="ms-auto">
           {!isAuthenticated ? (
             <Button variant="light" onClick={() => loginWithRedirect()}>
