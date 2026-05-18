@@ -163,6 +163,8 @@ export default function ProfileForm() {
   const [predictionPollRefreshing, setPredictionPollRefreshing] = useState(false)
   const [predictionError, setPredictionError] = useState(null)
   const [predictionRefreshKey, setPredictionRefreshKey] = useState(0)
+  const [generateLoading, setGenerateLoading] = useState(false)
+  const [generateError, setGenerateError] = useState(null)
 
   const [intervieweeDecision, setIntervieweeDecision] = useState('reuse_saved')
   const [intervieweeUploadScope, setIntervieweeUploadScope] = useState('session_only')
@@ -353,6 +355,32 @@ export default function ProfileForm() {
   const manualRefreshPrediction = useCallback(() => {
     setPredictionRefreshKey((k) => k + 1)
   }, [])
+
+  const canGeneratePrep = Boolean(
+    sessionDetail?.can_generate_prep ?? predictionData?.can_generate_prep
+  )
+
+  const generatePrep = useCallback(async () => {
+    if (!selectedPrepId || !canGeneratePrep) {
+      return
+    }
+    setGenerateLoading(true)
+    setGenerateError(null)
+    try {
+      const token = await getToken()
+      await axios.post(
+        `${apiBase}/api/prep-sessions/${encodeURIComponent(selectedPrepId)}/generate`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      setPredictionRefreshKey((k) => k + 1)
+      await Promise.all([loadSessions({ silent: true }), loadSessionDetail(selectedPrepId)])
+    } catch (err) {
+      setGenerateError(apiErrorMessage(err, 'Failed to generate interview prep'))
+    } finally {
+      setGenerateLoading(false)
+    }
+  }, [apiBase, apiErrorMessage, canGeneratePrep, getToken, loadSessionDetail, loadSessions, selectedPrepId])
 
   // People names sourced from profile_submissions returned by the session detail API
   const intervieweeSubmission = sessionDetail?.profile_submissions?.find((s) => s.role === 'INTERVIEWEE')
@@ -649,20 +677,30 @@ export default function ProfileForm() {
                     </div>
                   )}
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline-secondary"
-                  disabled={isPredictionBusy}
-                  onClick={manualRefreshPrediction}
-                  className="d-flex align-items-center gap-1 ms-2 flex-shrink-0"
-                >
-                  {isPredictionBusy ? (
-                    <Spinner animation="border" size="sm" />
-                  ) : (
-                    <RefreshIcon />
-                  )}
-                  <span style={{ fontSize: '0.78rem' }}>{refreshButtonLabel}</span>
-                </Button>
+                <div className="d-flex gap-2 ms-2 flex-shrink-0">
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={!canGeneratePrep || generateLoading || sessionDetail?.status === 'CLOSED'}
+                    onClick={generatePrep}
+                  >
+                    {generateLoading ? 'Generating…' : 'Generate interview prep'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline-secondary"
+                    disabled={isPredictionBusy}
+                    onClick={manualRefreshPrediction}
+                    className="d-flex align-items-center gap-1"
+                  >
+                    {isPredictionBusy ? (
+                      <Spinner animation="border" size="sm" />
+                    ) : (
+                      <RefreshIcon />
+                    )}
+                    <span style={{ fontSize: '0.78rem' }}>{refreshButtonLabel}</span>
+                  </Button>
+                </div>
               </div>
 
               {/* Session settings */}
@@ -835,6 +873,17 @@ export default function ProfileForm() {
                 </Card.Body>
               </Card>
 
+              <Alert variant="light" className="small mb-3">
+                To update interviewee or interviewer profiles for this session, use the browser extension.
+                When both profiles are saved, click <strong>Generate interview prep</strong>.
+                {!canGeneratePrep && (
+                  <span className="d-block mt-1 text-muted">
+                    Generate is enabled after both profiles are saved on this session.
+                  </span>
+                )}
+              </Alert>
+              {generateError && <Alert variant="danger">{generateError}</Alert>}
+
               {/* Prediction results */}
               {predictionLoading && (
                 <div className="text-muted">
@@ -890,8 +939,8 @@ export default function ProfileForm() {
                   {predictionData.pipeline_status === 'READY_FOR_TOPIC_GENERATION' &&
                     predictionData.prediction?.status === 'NOT_STARTED' && (
                       <Alert variant="info" className="mb-0">
-                        Both profiles are ready. Submit them from the browser extension to start
-                        generation, then use Refresh results to check progress.
+                        Both profiles are saved on this session. Click Generate interview prep to start
+                        AI generation, then use Refresh results to check progress.
                       </Alert>
                     )}
                   {predictionData.pipeline_status === 'READY_FOR_TOPIC_GENERATION' &&
