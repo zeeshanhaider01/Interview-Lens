@@ -113,7 +113,10 @@
             Interviewer
           </label>
         </div>
-        <p class="hintText">Changing role clears captured data.</p>
+        <p class="hintText">Switching role or clicking Load profile from session fills Review &amp; Edit from this prep session.</p>
+        <div class="row captureNavRow">
+          <button id="loadSessionProfileButton" type="button" class="btnOutline">Load profile from session</button>
+        </div>
         <div id="intervieweeDecisionSection" class="hidden mt8">
           <p id="intervieweeDecisionHint" class="hintText">
             Choose whether to reuse your saved interviewee profile or upload a new one.
@@ -188,6 +191,10 @@
 
       <section id="submitSection">
         <button id="submitButton" type="button" class="btnPrimary">Send to Interview Lens</button>
+        <button id="generatePrepButton" type="button" class="btnOutline hidden">Generate interview prep</button>
+        <p id="generatePrepHint" class="hintText hidden">
+          Save both interviewee and interviewer profiles for this session before generating.
+        </p>
       </section>
 
       <section id="dashboardCtaSection" class="hidden">

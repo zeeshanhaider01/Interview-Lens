@@ -58,6 +58,7 @@ const ui = {
   uploadDefaultProfileButton: document.getElementById("uploadDefaultProfileButton"),
   roleInterviewee: document.getElementById("roleInterviewee"),
   roleInterviewer: document.getElementById("roleInterviewer"),
+  loadSessionProfileButton: document.getElementById("loadSessionProfileButton"),
   intervieweeDecisionSection: document.getElementById("intervieweeDecisionSection"),
   intervieweeDecisionHint: document.getElementById("intervieweeDecisionHint"),
   intervieweeChoiceReuse: document.getElementById("intervieweeChoiceReuse"),
@@ -74,6 +75,8 @@ const ui = {
   captureProgressLabel: document.getElementById("captureProgressLabel"),
   captureSummary: document.getElementById("captureSummary"),
   submitButton: document.getElementById("submitButton"),
+  generatePrepButton: document.getElementById("generatePrepButton"),
+  generatePrepHint: document.getElementById("generatePrepHint"),
   dashboardCtaSection: document.getElementById("dashboardCtaSection"),
   openDashboardButton: document.getElementById("openDashboardButton"),
   statusMessage: document.getElementById("statusMessage"),
@@ -96,6 +99,9 @@ let currentSettings = {};
 let isAuthFlowPending = false;
 let isPrepValidationPending = false;
 let activePrepId = "";
+let canGeneratePrep = false;
+let isGeneratePending = false;
+let isSessionProfileLoadPending = false;
 let currentCaptureViewMode = CAPTURE_VIEW_MODES.PREP_SESSION;
 let lastCaptureSourceUrl = "";
 let lastProfileSizeEstimate = null;
@@ -188,16 +194,6 @@ function setCaptureViewMode(mode, options = {}) {
     updateIntervieweeDecisionUi();
   } else {
     updateIntervieweeDecisionUi();
-    if (
-      getRoleValue() === PROFILE_ROLES.INTERVIEWEE &&
-      getIntervieweeChoice() === INTERVIEWEE_PROFILE_CHOICES.REUSE_SAVED &&
-      hasDefaultIntervieweeProfile &&
-      !sectionsHaveContent()
-    ) {
-      loadDefaultProfileIntoForm({ silent: true }).catch(() => {
-        // Best-effort preload when entering Section B with reuse selected.
-      });
-    }
   }
   updateProfileSizePanel();
   applyActionAvailability();
@@ -213,13 +209,105 @@ function goToSectionA() {
   setStatus("Upload or update your default interviewee profile.");
 }
 
-function goToSectionB(options = {}) {
-  const { selectInterviewee = false } = options;
+async function goToSectionB(options = {}) {
+  const { selectInterviewee = false, loadProfile = true } = options;
   if (selectInterviewee) {
     setRoleValue(PROFILE_ROLES.INTERVIEWEE);
   }
-  setCaptureViewMode(CAPTURE_VIEW_MODES.PREP_SESSION);
+  setCaptureViewMode(CAPTURE_VIEW_MODES.PREP_SESSION, { persistDraft: false });
   setStatus("Prep session profile mode. Add a prep session before submitting session profiles.");
+  if (loadProfile && ui.prepIdInput.value.trim()) {
+    await loadSessionRoleProfileForCurrentRole({ silent: true });
+  }
+}
+
+function updateSessionPrepFlags(data) {
+  canGeneratePrep = Boolean(data?.can_generate_prep);
+  updateGeneratePrepUi();
+}
+
+function updateGeneratePrepUi() {
+  const show = isSectionB() && isAuthenticated;
+  ui.generatePrepButton.classList.toggle("hidden", !show);
+  ui.generatePrepHint.classList.toggle("hidden", !show || canGeneratePrep);
+  applyActionAvailability();
+}
+
+async function refreshSessionPrepState() {
+  const prepId = ui.prepIdInput.value.trim();
+  if (!prepId || !isAuthenticated) {
+    canGeneratePrep = false;
+    updateGeneratePrepUi();
+    return;
+  }
+  try {
+    const detail = await withRuntimeMessage({ type: "GET_PREP_SESSION_DETAIL", prepId });
+    updateSessionPrepFlags(detail);
+  } catch (_error) {
+    canGeneratePrep = false;
+    updateGeneratePrepUi();
+  }
+}
+
+async function loadSessionRoleProfileForCurrentRole(options = {}) {
+  const { silent = false } = options;
+  if (!isSectionB()) {
+    return;
+  }
+  const prepId = ui.prepIdInput.value.trim();
+  if (!prepId) {
+    if (!silent) {
+      throw new Error("Add or create a prep session before loading a profile.");
+    }
+    writeSections({});
+    ui.profileNameField.value = "";
+    setCapturedProfileBadge(null);
+    setCaptureSummary("");
+    updateProfileSizePanel();
+    return;
+  }
+
+  isSessionProfileLoadPending = true;
+  applyActionAvailability();
+  try {
+    const role = getRoleValue();
+    const data = await withRuntimeMessage({
+      type: "GET_PREP_SESSION_ROLE_PROFILE",
+      prepId,
+      role,
+    });
+    updateSessionPrepFlags(data);
+
+    if (data?.exists && data?.profile) {
+      const profile = data.profile;
+      writeSections(profile.extracted_sections ?? {});
+      ui.profileNameField.value = profile.profile_name || profile.metadata?.profile_name || "";
+      lastCaptureSourceUrl = String(profile.source_url ?? "").trim();
+      setCapturedProfileBadge(role);
+      setCaptureSummary("");
+      if (!silent) {
+        setStatus(
+          `Loaded saved ${role === PROFILE_ROLES.INTERVIEWER ? "interviewer" : "interviewee"} profile for this session.`
+        );
+      }
+    } else {
+      writeSections({});
+      ui.profileNameField.value = "";
+      lastCaptureSourceUrl = "";
+      setCapturedProfileBadge(null);
+      setCaptureSummary("");
+      if (!silent) {
+        setStatus(
+          `No saved ${role === PROFILE_ROLES.INTERVIEWER ? "interviewer" : "interviewee"} profile on this session yet. Capture or enter data, then save.`
+        );
+      }
+    }
+    updateProfileSizePanel();
+    await persistPopupDraft();
+  } finally {
+    isSessionProfileLoadPending = false;
+    applyActionAvailability();
+  }
 }
 
 async function loadDefaultProfileIntoForm(options = {}) {
@@ -606,7 +694,24 @@ function applyActionAvailability() {
     profileBlocked ||
     sectionBSubmitBlocked ||
     missingPrepForSession;
-  ui.captureButton.disabled = isAuthFlowPending;
+  if (ui.generatePrepButton) {
+    ui.generatePrepButton.disabled =
+      isAuthFlowPending ||
+      isGeneratePending ||
+      !isAuthenticated ||
+      !isSectionB() ||
+      missingPrepForSession ||
+      !canGeneratePrep;
+  }
+  if (ui.loadSessionProfileButton) {
+    ui.loadSessionProfileButton.disabled =
+      isAuthFlowPending ||
+      isSessionProfileLoadPending ||
+      !isAuthenticated ||
+      !isSectionB() ||
+      missingPrepForSession;
+  }
+  ui.captureButton.disabled = isAuthFlowPending || isSessionProfileLoadPending;
   updatePrepActionButtonsVisibility();
 }
 
@@ -741,6 +846,7 @@ function writeSections(sections = {}) {
 
 function resetPopupFormAfterLogout() {
   ui.prepIdInput.value = "";
+  canGeneratePrep = false;
   setDashboardCtaUrl("");
   setActivePrepBadge("");
   setRoleValue(PROFILE_ROLES.INTERVIEWEE);
@@ -791,9 +897,15 @@ async function refreshIntervieweeDecisionState() {
       if (detail?.has_default_interviewee_profile) {
         hasDefaultIntervieweeProfile = true;
       }
+      updateSessionPrepFlags(detail);
     } catch (_error) {
       // Keep baseline capability from profile endpoint even when session lookup fails.
+      canGeneratePrep = false;
+      updateGeneratePrepUi();
     }
+  } else {
+    canGeneratePrep = false;
+    updateGeneratePrepUi();
   }
   updateIntervieweeDecisionUi();
   updateNextButtonVisibility();
@@ -904,6 +1016,8 @@ async function submitPrepSessionProfile() {
     (data.dashboard_url ?? "").trim() || buildDashboardUrl(currentSettings.dashboardUrl, prepId);
   setDashboardCtaUrl(dashboardUrl);
 
+  updateSessionPrepFlags(data);
+
   const sessionMessage =
     data.user_message || `Submitted successfully. Current status: ${data.pipeline_status}`;
   if (role === PROFILE_ROLES.INTERVIEWEE && uploadScope === INTERVIEWEE_UPLOAD_SCOPES.SAVE_AS_DEFAULT) {
@@ -912,6 +1026,35 @@ async function submitPrepSessionProfile() {
     setStatus(sessionMessage);
   }
   await refreshIntervieweeDecisionState();
+}
+
+async function generatePrepForActiveSession() {
+  const prepId = ui.prepIdInput.value.trim();
+  if (!prepId) {
+    throw new Error("Add or create a prep session before generating interview prep.");
+  }
+  if (!canGeneratePrep) {
+    throw new Error("Save both interviewee and interviewer profiles for this session before generating.");
+  }
+
+  isGeneratePending = true;
+  applyActionAvailability();
+  try {
+    await persistActivePrepId(prepId);
+    setActivePrepBadge(prepId);
+    const data = await withRuntimeMessage({
+      type: "GENERATE_PREP_SESSION",
+      prepId,
+    });
+    const dashboardUrl =
+      (data.dashboard_url ?? "").trim() || buildDashboardUrl(currentSettings.dashboardUrl, prepId);
+    setDashboardCtaUrl(dashboardUrl);
+    updateSessionPrepFlags(data);
+    setStatus(data.user_message || "Generation started.");
+  } finally {
+    isGeneratePending = false;
+    applyActionAvailability();
+  }
 }
 
 async function loadInitialState() {
@@ -995,6 +1138,9 @@ async function loadInitialState() {
       { persistDraft: false }
     );
   }
+  if (isSectionB() && ui.prepIdInput.value.trim()) {
+    await loadSessionRoleProfileForCurrentRole({ silent: true });
+  }
   updateProfileSizePanel();
 }
 
@@ -1058,7 +1204,7 @@ ui.createPrepSessionButton.addEventListener("click", async () => {
     setDashboardCtaUrl(buildDashboardUrl(currentSettings.dashboardUrl, data.prep_id));
     setActivePrepBadge(data.prep_id);
     await refreshIntervieweeDecisionState();
-    goToSectionB();
+    await goToSectionB();
     setStatus("New prep session created. Submit interviewee and interviewer profiles for this session.");
   } catch (error) {
     setStatus(readErrorMessage(error), true);
@@ -1085,7 +1231,7 @@ ui.addPrepSessionButton.addEventListener("click", async () => {
     setActivePrepBadge(prepId);
     await persistPopupDraft();
     await refreshIntervieweeDecisionState();
-    goToSectionB();
+    await goToSectionB();
     setStatus("Preparation ID validated and added successfully.");
   } catch (error) {
     setStatus(
@@ -1203,8 +1349,29 @@ ui.submitButton.addEventListener("click", async () => {
   }
 });
 
+ui.generatePrepButton.addEventListener("click", async () => {
+  try {
+    if (!isAuthenticated) {
+      throw new Error("Login required before generating interview prep.");
+    }
+    await generatePrepForActiveSession();
+  } catch (error) {
+    setStatus(readErrorMessage(error), true);
+  }
+});
+
 ui.nextToSectionBButton.addEventListener("click", () => {
-  goToSectionB({ selectInterviewee: true });
+  goToSectionB({ selectInterviewee: true }).catch((error) => {
+    setStatus(readErrorMessage(error), true);
+  });
+});
+
+ui.loadSessionProfileButton.addEventListener("click", async () => {
+  try {
+    await loadSessionRoleProfileForCurrentRole();
+  } catch (error) {
+    setStatus(readErrorMessage(error), true);
+  }
 });
 
 ui.uploadDefaultProfileButton.addEventListener("click", () => {
@@ -1213,13 +1380,9 @@ ui.uploadDefaultProfileButton.addEventListener("click", () => {
 
 [ui.roleInterviewee, ui.roleInterviewer].forEach((radio) => {
   radio.addEventListener("change", () => {
-    writeSections({});
-    ui.profileNameField.value = "";
-    setCapturedProfileBadge(null);
     updateIntervieweeDecisionUi();
-    updateProfileSizePanel();
-    persistPopupDraft().catch(() => {
-      // Best-effort draft persistence.
+    loadSessionRoleProfileForCurrentRole().catch((error) => {
+      setStatus(readErrorMessage(error), true);
     });
   });
 });

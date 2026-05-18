@@ -104,7 +104,12 @@ class ProfileTrimTests(TestCase):
 
 class FingerprintOutputModeTests(TestCase):
     def test_output_mode_in_fingerprint(self):
-        interviewee = {"name": "A", "email": "a@x.com", "education": "BS", "experience": "Py"}
+        interviewee = {
+            "name": "A",
+            "email": "a@x.com",
+            "education": "BS",
+            "experience": "Py",
+        }
         interviewer = {"name": "B", "education": "MS", "experience": "Eng"}
         fp = compute_fingerprint(
             "user-1",
@@ -133,7 +138,9 @@ class TopicPersistenceTests(TestCase):
         )
         rows = replace_prediction_topics(prediction, SAMPLE_TOPICS)
         self.assertEqual(len(rows), 4)
-        self.assertEqual(PredictionTopic.objects.filter(prediction=prediction).count(), 4)
+        self.assertEqual(
+            PredictionTopic.objects.filter(prediction=prediction).count(), 4
+        )
         self.assertEqual(rows[0]["topic_key"], "system-design")
 
 
@@ -176,7 +183,9 @@ class GetPrepPredictionTopicsTests(APITestCase):
     @mock.patch("api.prediction_service.generate_questions")
     def test_get_prep_prediction_includes_topics(self, mock_generate):
         mock_generate.return_value = sample_prediction_result()
-        db_user = User.objects.create(auth0_sub="test|prep-topics", email="prep-topics@example.com")
+        db_user = User.objects.create(
+            auth0_sub="test|prep-topics", email="prep-topics@example.com"
+        )
         prep_session = PrepSession.objects.create(
             user=db_user,
             title="Backend Engineer",
@@ -199,25 +208,20 @@ class GetPrepPredictionTopicsTests(APITestCase):
         )
 
         self.client.force_authenticate(
-            user=Auth0User({"sub": "test|prep-topics", "email": "prep-topics@example.com"})
+            user=Auth0User(
+                {"sub": "test|prep-topics", "email": "prep-topics@example.com"}
+            )
         )
-        submit_url = reverse("submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)})
-        status_url = reverse("get_prep_prediction", kwargs={"prep_id": str(prep_session.prep_id)})
+        generate_url = reverse(
+            "generate_prep_session_prediction",
+            kwargs={"prep_id": str(prep_session.prep_id)},
+        )
+        status_url = reverse(
+            "get_prep_prediction", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
 
         with mock.patch("api.views.run_prediction_task.delay"):
-            self.client.post(
-                submit_url,
-                data=json.dumps(
-                    {
-                        "role": "INTERVIEWER",
-                        "extracted_sections": {
-                            "experience": ["Staff Eng"],
-                            "education": ["MS"],
-                        },
-                    }
-                ),
-                content_type="application/json",
-            )
+            self.client.post(generate_url)
 
         from api.views import (
             build_predict_payload_from_profile_state,
@@ -225,10 +229,12 @@ class GetPrepPredictionTopicsTests(APITestCase):
         )
 
         profile_state = resolve_session_profile_state(prep_session, db_user)
-        interviewee, interviewer, interview_context = build_predict_payload_from_profile_state(
-            profile_state,
-            user_email=db_user.email,
-            prep_session=prep_session,
+        interviewee, interviewer, interview_context = (
+            build_predict_payload_from_profile_state(
+                profile_state,
+                user_email=db_user.email,
+                prep_session=prep_session,
+            )
         )
         run_prediction_task.run(
             user_identifier="test|prep-topics",

@@ -241,6 +241,12 @@ textarea:focus-visible {
   min-width: 88px;
 }
 
+#submitSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 #addPrepSessionButton {
   flex: 0 0 auto;
   width: auto;
