@@ -715,11 +715,91 @@ class PrepSessionEndpointTests(APITestCase):
             repeat_response = self.client.post(generate_url)
         self.assertEqual(repeat_response.status_code, 200)
         self.assertEqual(repeat_response.json()["prediction"]["status"], "COMPLETED")
+        self.assertEqual(repeat_response.json()["generation_source"], "cache")
         result = repeat_response.json()["prediction"]["result"]
         self.assertEqual(result["markdown"], "# Cached prep")
         self.assertEqual(len(result["topics"]), 4)
         repeat_delay.assert_not_called()
         self.assertEqual(mock_generate.call_count, 1)
+
+    @mock.patch("api.prediction_service.generate_questions")
+    def test_generate_starts_new_job_when_session_profiles_change(self, mock_generate):
+        mock_generate.return_value = mock_prediction_result(
+            markdown="# Updated prep", marker="updated"
+        )
+        db_user = User.objects.create(
+            auth0_sub="test|profile-change", email="change@example.com"
+        )
+        prep_session = PrepSession.objects.create(
+            user=db_user, title="Change prep", company_name="Acme"
+        )
+        self.client.force_authenticate(
+            user=Auth0User(
+                {"sub": "test|profile-change", "email": "change@example.com"}
+            )
+        )
+        submit_url = reverse(
+            "submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
+        generate_url = reverse(
+            "generate_prep_session_prediction",
+            kwargs={"prep_id": str(prep_session.prep_id)},
+        )
+        interviewee_v1 = {
+            "role": "INTERVIEWEE",
+            "extracted_sections": {
+                "experience": ["2 years Python"],
+                "education": ["BS Computer Science"],
+            },
+        }
+        interviewer_payload = {
+            "role": "INTERVIEWER",
+            "extracted_sections": {
+                "experience": ["Engineering Manager"],
+                "education": ["MS Software Engineering"],
+            },
+        }
+
+        self.client.post(
+            submit_url, data=json.dumps(interviewee_v1), content_type="application/json"
+        )
+        self.client.post(
+            submit_url,
+            data=json.dumps(interviewer_payload),
+            content_type="application/json",
+        )
+
+        with mock.patch("api.views.run_prediction_task.delay") as first_delay:
+            first_response = self.client.post(generate_url)
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(first_response.json()["generation_source"], "queued")
+        self.assertEqual(first_delay.call_count, 1)
+
+        run_prediction_task.run(
+            user_identifier="test|profile-change",
+            db_user_id=db_user.id,
+            interviewee=first_delay.call_args.kwargs["interviewee"],
+            interviewer=first_delay.call_args.kwargs["interviewer"],
+            interview_context=first_delay.call_args.kwargs["interview_context"],
+        )
+
+        interviewee_v2 = {
+            "role": "INTERVIEWEE",
+            "extracted_sections": {
+                "experience": ["5 years Python and Django"],
+                "education": ["BS Computer Science"],
+            },
+        }
+        self.client.post(
+            submit_url, data=json.dumps(interviewee_v2), content_type="application/json"
+        )
+
+        with mock.patch("api.views.run_prediction_task.delay") as second_delay:
+            second_response = self.client.post(generate_url)
+        self.assertEqual(second_response.status_code, 200)
+        self.assertEqual(second_response.json()["generation_source"], "queued")
+        self.assertEqual(second_response.json()["prediction"]["status"], "RUNNING")
+        self.assertEqual(second_delay.call_count, 1)
 
     @mock.patch("api.prediction_service.generate_questions")
     def test_get_prep_prediction_returns_completed_result_after_task_finishes(

@@ -79,6 +79,18 @@ class PrepSessionSaveGenerateHelperTests(SimpleTestCase):
         message = build_generate_user_message({"status": "COMPLETED"})
         self.assertIn("ready", message.lower())
 
+    def test_build_generate_user_message_for_cached_completed_prediction(self):
+        message = build_generate_user_message(
+            {"status": "COMPLETED"}, generation_source="cache"
+        )
+        self.assertIn("loaded your saved interview prep", message.lower())
+
+    def test_build_generate_user_message_for_in_progress_generation(self):
+        message = build_generate_user_message(
+            {"status": "RUNNING"}, generation_source="in_progress"
+        )
+        self.assertIn("already running", message.lower())
+
     def test_build_generate_user_message_for_failed_prediction(self):
         message = build_generate_user_message({"status": "FAILED"})
         self.assertIn("could not generate", message.lower())
