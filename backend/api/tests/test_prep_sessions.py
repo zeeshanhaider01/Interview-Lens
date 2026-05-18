@@ -68,7 +68,9 @@ class PrepSessionEndpointTests(APITestCase):
         self.assertEqual(body["results"][1]["title"], "First session")
 
     def test_get_prep_session_detail_returns_owned_session(self):
-        db_user = User.objects.create(auth0_sub="test|detail", email="detail@example.com")
+        db_user = User.objects.create(
+            auth0_sub="test|detail", email="detail@example.com"
+        )
         prep_session = PrepSession.objects.create(
             user=db_user,
             title="Detail session",
@@ -78,7 +80,9 @@ class PrepSessionEndpointTests(APITestCase):
             user=Auth0User({"sub": "test|detail", "email": "detail@example.com"})
         )
 
-        url = reverse("prep_session_detail", kwargs={"prep_id": str(prep_session.prep_id)})
+        url = reverse(
+            "prep_session_detail", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -111,7 +115,9 @@ class PrepSessionEndpointTests(APITestCase):
             "confidence_flags": {"edited_by_user": True},
             "metadata": {"submitted_from": "extension"},
         }
-        response = self.client.put(url, data=json.dumps(payload), content_type="application/json")
+        response = self.client.put(
+            url, data=json.dumps(payload), content_type="application/json"
+        )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(IntervieweeBaselineProfile.objects.count(), 1)
         saved = IntervieweeBaselineProfile.objects.first()
@@ -120,15 +126,21 @@ class PrepSessionEndpointTests(APITestCase):
 
     def test_patch_prep_session_detail_updates_fields(self):
         db_user = User.objects.create(auth0_sub="test|patch", email="patch@example.com")
-        prep_session = PrepSession.objects.create(user=db_user, title="Old title", company_name="OldCo")
+        prep_session = PrepSession.objects.create(
+            user=db_user, title="Old title", company_name="OldCo"
+        )
         self.client.force_authenticate(
             user=Auth0User({"sub": "test|patch", "email": "patch@example.com"})
         )
 
-        url = reverse("prep_session_detail", kwargs={"prep_id": str(prep_session.prep_id)})
+        url = reverse(
+            "prep_session_detail", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
         response = self.client.patch(
             url,
-            data=json.dumps({"title": "New title", "company_name": "", "status": "CLOSED"}),
+            data=json.dumps(
+                {"title": "New title", "company_name": "", "status": "CLOSED"}
+            ),
             content_type="application/json",
         )
 
@@ -139,26 +151,40 @@ class PrepSessionEndpointTests(APITestCase):
         self.assertEqual(prep_session.status, PrepSession.STATUS_CLOSED)
 
     def test_patch_prep_session_detail_rejects_empty_payload(self):
-        db_user = User.objects.create(auth0_sub="test|patch-empty", email="patch-empty@example.com")
+        db_user = User.objects.create(
+            auth0_sub="test|patch-empty", email="patch-empty@example.com"
+        )
         prep_session = PrepSession.objects.create(user=db_user, title="Session")
         self.client.force_authenticate(
-            user=Auth0User({"sub": "test|patch-empty", "email": "patch-empty@example.com"})
+            user=Auth0User(
+                {"sub": "test|patch-empty", "email": "patch-empty@example.com"}
+            )
         )
 
-        url = reverse("prep_session_detail", kwargs={"prep_id": str(prep_session.prep_id)})
-        response = self.client.patch(url, data=json.dumps({}), content_type="application/json")
+        url = reverse(
+            "prep_session_detail", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
+        response = self.client.patch(
+            url, data=json.dumps({}), content_type="application/json"
+        )
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("detail", response.json())
 
     def test_delete_prep_session_archives_session(self):
-        db_user = User.objects.create(auth0_sub="test|delete", email="delete@example.com")
-        prep_session = PrepSession.objects.create(user=db_user, title="Session to close")
+        db_user = User.objects.create(
+            auth0_sub="test|delete", email="delete@example.com"
+        )
+        prep_session = PrepSession.objects.create(
+            user=db_user, title="Session to close"
+        )
         self.client.force_authenticate(
             user=Auth0User({"sub": "test|delete", "email": "delete@example.com"})
         )
 
-        detail_url = reverse("prep_session_detail", kwargs={"prep_id": str(prep_session.prep_id)})
+        detail_url = reverse(
+            "prep_session_detail", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
         delete_response = self.client.delete(detail_url)
         self.assertEqual(delete_response.status_code, 200)
         self.assertTrue(delete_response.json()["archived"])
@@ -166,7 +192,9 @@ class PrepSessionEndpointTests(APITestCase):
         prep_session.refresh_from_db()
         self.assertEqual(prep_session.status, PrepSession.STATUS_CLOSED)
 
-        submit_url = reverse("submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)})
+        submit_url = reverse(
+            "submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
         submit_response = self.client.post(
             submit_url,
             data=json.dumps(
@@ -183,7 +211,10 @@ class PrepSessionEndpointTests(APITestCase):
         self.assertEqual(submit_response.status_code, 404)
 
     def test_submit_profile_requires_owned_active_prep_session(self):
-        url = reverse("submit_prep_profile", kwargs={"prep_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"})
+        url = reverse(
+            "submit_prep_profile",
+            kwargs={"prep_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
+        )
         payload = {
             "role": "INTERVIEWEE",
             "source": "LINKEDIN",
@@ -192,19 +223,25 @@ class PrepSessionEndpointTests(APITestCase):
                 "education": ["BS Computer Science"],
             },
         }
-        response = self.client.post(url, data=json.dumps(payload), content_type="application/json")
+        response = self.client.post(
+            url, data=json.dumps(payload), content_type="application/json"
+        )
 
         self.assertEqual(response.status_code, 404)
 
     def test_submit_profile_saves_normalized_text(self):
-        db_user = User.objects.create(auth0_sub="test|existing", email="existing@example.com")
+        db_user = User.objects.create(
+            auth0_sub="test|existing", email="existing@example.com"
+        )
         prep_session = PrepSession.objects.create(user=db_user, title="ML interview")
 
         # authenticate as same user subject to match ownership
         self.client.force_authenticate(
             user=Auth0User({"sub": "test|existing", "email": "existing@example.com"})
         )
-        url = reverse("submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)})
+        url = reverse(
+            "submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
         payload = {
             "role": "INTERVIEWER",
             "source_url": "https://www.linkedin.com/in/some-profile/",
@@ -214,7 +251,9 @@ class PrepSessionEndpointTests(APITestCase):
                 "skills": ["System Design", "Distributed Systems"],
             },
         }
-        response = self.client.post(url, data=json.dumps(payload), content_type="application/json")
+        response = self.client.post(
+            url, data=json.dumps(payload), content_type="application/json"
+        )
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(PrepProfileSubmission.objects.count(), 1)
@@ -223,13 +262,17 @@ class PrepSessionEndpointTests(APITestCase):
         self.assertEqual(submission.role, PrepProfileSubmission.ROLE_INTERVIEWER)
 
     def test_submit_profile_same_role_updates_existing_row(self):
-        db_user = User.objects.create(auth0_sub="test|upsert", email="upsert@example.com")
+        db_user = User.objects.create(
+            auth0_sub="test|upsert", email="upsert@example.com"
+        )
         prep_session = PrepSession.objects.create(user=db_user, title="Data interview")
 
         self.client.force_authenticate(
             user=Auth0User({"sub": "test|upsert", "email": "upsert@example.com"})
         )
-        url = reverse("submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)})
+        url = reverse(
+            "submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
 
         first_payload = {
             "role": "INTERVIEWEE",
@@ -238,7 +281,9 @@ class PrepSessionEndpointTests(APITestCase):
                 "education": ["BS Computer Science"],
             },
         }
-        first_response = self.client.post(url, data=json.dumps(first_payload), content_type="application/json")
+        first_response = self.client.post(
+            url, data=json.dumps(first_payload), content_type="application/json"
+        )
         self.assertEqual(first_response.status_code, 201)
         self.assertEqual(PrepProfileSubmission.objects.count(), 1)
 
@@ -250,7 +295,9 @@ class PrepSessionEndpointTests(APITestCase):
                 "skills": ["Django", "System Design"],
             },
         }
-        second_response = self.client.post(url, data=json.dumps(second_payload), content_type="application/json")
+        second_response = self.client.post(
+            url, data=json.dumps(second_payload), content_type="application/json"
+        )
         self.assertEqual(second_response.status_code, 200)
         self.assertEqual(PrepProfileSubmission.objects.count(), 1)
 
@@ -262,13 +309,17 @@ class PrepSessionEndpointTests(APITestCase):
         self.assertIn("SKILLS:", submission.normalized_text)
 
     def test_submit_profile_allows_two_rows_max_per_session_by_role(self):
-        db_user = User.objects.create(auth0_sub="test|two-roles", email="two-roles@example.com")
+        db_user = User.objects.create(
+            auth0_sub="test|two-roles", email="two-roles@example.com"
+        )
         prep_session = PrepSession.objects.create(user=db_user, title="Full prep")
 
         self.client.force_authenticate(
             user=Auth0User({"sub": "test|two-roles", "email": "two-roles@example.com"})
         )
-        url = reverse("submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)})
+        url = reverse(
+            "submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
 
         interviewee_payload = {
             "role": "INTERVIEWEE",
@@ -289,24 +340,36 @@ class PrepSessionEndpointTests(APITestCase):
             url, data=json.dumps(interviewee_payload), content_type="application/json"
         )
         self.assertEqual(first_response.status_code, 201)
-        self.assertEqual(first_response.json()["pipeline_status"], "WAITING_FOR_COUNTERPART_PROFILE")
+        self.assertEqual(
+            first_response.json()["pipeline_status"], "WAITING_FOR_COUNTERPART_PROFILE"
+        )
 
         second_response = self.client.post(
             url, data=json.dumps(interviewer_payload), content_type="application/json"
         )
         self.assertEqual(second_response.status_code, 201)
-        self.assertEqual(second_response.json()["pipeline_status"], "READY_FOR_TOPIC_GENERATION")
-        self.assertEqual(PrepProfileSubmission.objects.filter(prep_session=prep_session).count(), 2)
+        self.assertEqual(
+            second_response.json()["pipeline_status"], "READY_FOR_TOPIC_GENERATION"
+        )
+        self.assertEqual(
+            PrepProfileSubmission.objects.filter(prep_session=prep_session).count(), 2
+        )
 
         third_response = self.client.post(
             url, data=json.dumps(interviewer_payload), content_type="application/json"
         )
         self.assertEqual(third_response.status_code, 200)
-        self.assertEqual(PrepProfileSubmission.objects.filter(prep_session=prep_session).count(), 2)
+        self.assertEqual(
+            PrepProfileSubmission.objects.filter(prep_session=prep_session).count(), 2
+        )
 
     @mock.patch("api.views.run_prediction_task.delay")
-    def test_submit_interviewer_uses_default_interviewee_profile(self, mock_delay):
-        db_user = User.objects.create(auth0_sub="test|baseline-ready", email="baseline-ready@example.com")
+    def test_submit_interviewer_with_default_interviewee_does_not_auto_generate(
+        self, mock_delay
+    ):
+        db_user = User.objects.create(
+            auth0_sub="test|baseline-ready", email="baseline-ready@example.com"
+        )
         prep_session = PrepSession.objects.create(user=db_user, title="Baseline ready")
         IntervieweeBaselineProfile.objects.create(
             user=db_user,
@@ -317,9 +380,13 @@ class PrepSessionEndpointTests(APITestCase):
             normalized_text="EXPERIENCE:\n6 years Python backend development\n\nEDUCATION:\nBS Software Engineering",
         )
         self.client.force_authenticate(
-            user=Auth0User({"sub": "test|baseline-ready", "email": "baseline-ready@example.com"})
+            user=Auth0User(
+                {"sub": "test|baseline-ready", "email": "baseline-ready@example.com"}
+            )
         )
-        url = reverse("submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)})
+        url = reverse(
+            "submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
         interviewer_payload = {
             "role": "INTERVIEWER",
             "extracted_sections": {
@@ -327,15 +394,22 @@ class PrepSessionEndpointTests(APITestCase):
                 "education": ["MS Computer Science"],
             },
         }
-        response = self.client.post(url, data=json.dumps(interviewer_payload), content_type="application/json")
+        response = self.client.post(
+            url, data=json.dumps(interviewer_payload), content_type="application/json"
+        )
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.json()["pipeline_status"], "READY_FOR_TOPIC_GENERATION")
+        self.assertEqual(
+            response.json()["pipeline_status"], "WAITING_FOR_COUNTERPART_PROFILE"
+        )
         self.assertEqual(response.json()["interviewee_source"], "DEFAULT")
-        self.assertEqual(response.json()["prediction"]["status"], "RUNNING")
-        self.assertEqual(mock_delay.call_count, 1)
+        self.assertFalse(response.json()["can_generate_prep"])
+        self.assertIsNone(response.json()["prediction"])
+        mock_delay.assert_not_called()
 
     def test_session_interviewee_profile_overrides_default_source(self):
-        db_user = User.objects.create(auth0_sub="test|override-source", email="override@example.com")
+        db_user = User.objects.create(
+            auth0_sub="test|override-source", email="override@example.com"
+        )
         prep_session = PrepSession.objects.create(user=db_user, title="Override source")
         IntervieweeBaselineProfile.objects.create(
             user=db_user,
@@ -356,27 +430,37 @@ class PrepSessionEndpointTests(APITestCase):
             normalized_text="EXPERIENCE:\n2 years modern profile\n\nEDUCATION:\nBS Computer Science",
         )
         self.client.force_authenticate(
-            user=Auth0User({"sub": "test|override-source", "email": "override@example.com"})
+            user=Auth0User(
+                {"sub": "test|override-source", "email": "override@example.com"}
+            )
         )
 
-        detail_url = reverse("prep_session_detail", kwargs={"prep_id": str(prep_session.prep_id)})
+        detail_url = reverse(
+            "prep_session_detail", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
         detail_response = self.client.get(detail_url)
         self.assertEqual(detail_response.status_code, 200)
         self.assertEqual(detail_response.json()["interviewee_source"], "SESSION")
         self.assertTrue(detail_response.json()["has_default_interviewee_profile"])
 
     @mock.patch("api.views.run_prediction_task.delay")
-    def test_submit_profile_queues_prediction_once_ready(self, mock_delay):
-        db_user = User.objects.create(auth0_sub="test|predict-from-prep", email="prep-flow@example.com")
+    def test_submit_profile_does_not_queue_prediction_when_both_ready(self, mock_delay):
+        db_user = User.objects.create(
+            auth0_sub="test|predict-from-prep", email="prep-flow@example.com"
+        )
         prep_session = PrepSession.objects.create(
             user=db_user,
             title="Junior Backend Engineer",
             company_name="Acme",
         )
         self.client.force_authenticate(
-            user=Auth0User({"sub": "test|predict-from-prep", "email": "prep-flow@example.com"})
+            user=Auth0User(
+                {"sub": "test|predict-from-prep", "email": "prep-flow@example.com"}
+            )
         )
-        url = reverse("submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)})
+        url = reverse(
+            "submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
 
         interviewee_payload = {
             "role": "INTERVIEWEE",
@@ -400,7 +484,9 @@ class PrepSessionEndpointTests(APITestCase):
             content_type="application/json",
         )
         self.assertEqual(first_response.status_code, 201)
-        self.assertEqual(first_response.json()["pipeline_status"], "WAITING_FOR_COUNTERPART_PROFILE")
+        self.assertEqual(
+            first_response.json()["pipeline_status"], "WAITING_FOR_COUNTERPART_PROFILE"
+        )
         self.assertIsNone(first_response.json()["prediction"])
         mock_delay.assert_not_called()
 
@@ -410,25 +496,171 @@ class PrepSessionEndpointTests(APITestCase):
             content_type="application/json",
         )
         self.assertEqual(second_response.status_code, 201)
-        self.assertEqual(second_response.json()["pipeline_status"], "READY_FOR_TOPIC_GENERATION")
-        self.assertEqual(second_response.json()["prediction"]["status"], "RUNNING")
+        self.assertEqual(
+            second_response.json()["pipeline_status"], "READY_FOR_TOPIC_GENERATION"
+        )
+        self.assertTrue(second_response.json()["can_generate_prep"])
+        self.assertIsNone(second_response.json()["prediction"])
+        mock_delay.assert_not_called()
+
+    @mock.patch("api.views.run_prediction_task.delay")
+    def test_generate_prep_queues_prediction_once_ready(self, mock_delay):
+        db_user = User.objects.create(
+            auth0_sub="test|generate-prep", email="generate@example.com"
+        )
+        prep_session = PrepSession.objects.create(
+            user=db_user,
+            title="Junior Backend Engineer",
+            company_name="Acme",
+        )
+        self.client.force_authenticate(
+            user=Auth0User(
+                {"sub": "test|generate-prep", "email": "generate@example.com"}
+            )
+        )
+        submit_url = reverse(
+            "submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
+        generate_url = reverse(
+            "generate_prep_session_prediction",
+            kwargs={"prep_id": str(prep_session.prep_id)},
+        )
+
+        self.client.post(
+            submit_url,
+            data=json.dumps(
+                {
+                    "role": "INTERVIEWEE",
+                    "extracted_sections": {
+                        "experience": ["3 years backend development"],
+                        "education": ["BS Computer Science"],
+                    },
+                }
+            ),
+            content_type="application/json",
+        )
+        self.client.post(
+            submit_url,
+            data=json.dumps(
+                {
+                    "role": "INTERVIEWER",
+                    "extracted_sections": {
+                        "experience": ["Staff Engineer at ExampleOrg"],
+                        "education": ["MS Computer Science"],
+                    },
+                }
+            ),
+            content_type="application/json",
+        )
+
+        generate_response = self.client.post(generate_url)
+        self.assertEqual(generate_response.status_code, 200)
+        self.assertEqual(generate_response.json()["prediction"]["status"], "RUNNING")
         self.assertEqual(mock_delay.call_count, 1)
         self.assertEqual(
             mock_delay.call_args.kwargs["interview_context"],
             {"target_role": "Junior Backend Engineer", "target_company": "Acme"},
         )
 
+    def test_generate_prep_requires_both_session_profiles(self):
+        db_user = User.objects.create(
+            auth0_sub="test|generate-blocked", email="blocked@example.com"
+        )
+        prep_session = PrepSession.objects.create(user=db_user, title="Blocked")
+        self.client.force_authenticate(
+            user=Auth0User(
+                {"sub": "test|generate-blocked", "email": "blocked@example.com"}
+            )
+        )
+        submit_url = reverse(
+            "submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
+        generate_url = reverse(
+            "generate_prep_session_prediction",
+            kwargs={"prep_id": str(prep_session.prep_id)},
+        )
+
+        self.client.post(
+            submit_url,
+            data=json.dumps(
+                {
+                    "role": "INTERVIEWEE",
+                    "extracted_sections": {
+                        "experience": ["2 years Python"],
+                        "education": ["BS Computer Science"],
+                    },
+                }
+            ),
+            content_type="application/json",
+        )
+
+        response = self.client.post(generate_url)
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.json()["can_generate_prep"])
+
+    def test_get_prep_session_role_profile_returns_session_submission(self):
+        db_user = User.objects.create(
+            auth0_sub="test|role-profile", email="role@example.com"
+        )
+        prep_session = PrepSession.objects.create(user=db_user, title="Role profile")
+        PrepProfileSubmission.objects.create(
+            prep_session=prep_session,
+            user=db_user,
+            role=PrepProfileSubmission.ROLE_INTERVIEWEE,
+            extracted_sections={
+                "experience": ["2 years Python"],
+                "education": ["BS Computer Science"],
+            },
+            metadata={"profile_name": "Alex Candidate"},
+        )
+        self.client.force_authenticate(
+            user=Auth0User({"sub": "test|role-profile", "email": "role@example.com"})
+        )
+        url = reverse(
+            "get_prep_session_role_profile",
+            kwargs={"prep_id": str(prep_session.prep_id), "role": "INTERVIEWEE"},
+        )
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["exists"])
+        self.assertEqual(body["profile"]["profile_name"], "Alex Candidate")
+        self.assertEqual(
+            body["profile"]["extracted_sections"]["experience"], ["2 years Python"]
+        )
+
+    def test_get_prep_session_role_profile_missing_returns_exists_false(self):
+        db_user = User.objects.create(
+            auth0_sub="test|role-missing", email="missing@example.com"
+        )
+        prep_session = PrepSession.objects.create(user=db_user, title="Missing role")
+        self.client.force_authenticate(
+            user=Auth0User({"sub": "test|role-missing", "email": "missing@example.com"})
+        )
+        url = reverse(
+            "get_prep_session_role_profile",
+            kwargs={"prep_id": str(prep_session.prep_id), "role": "INTERVIEWER"},
+        )
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["exists"])
+        self.assertIsNone(response.json()["profile"])
+
     @mock.patch("api.prediction_service.generate_questions")
-    def test_submit_profile_reuses_completed_prediction_without_requeue(self, mock_generate):
+    def test_generate_reuses_completed_prediction_without_requeue(self, mock_generate):
         mock_generate.return_value = mock_prediction_result(
             markdown="# Cached prep", marker="repeat"
         )
-        db_user = User.objects.create(auth0_sub="test|repeat-prep", email="repeat@example.com")
+        db_user = User.objects.create(
+            auth0_sub="test|repeat-prep", email="repeat@example.com"
+        )
         prep_session = PrepSession.objects.create(user=db_user, title="Repeat prep")
         self.client.force_authenticate(
             user=Auth0User({"sub": "test|repeat-prep", "email": "repeat@example.com"})
         )
-        url = reverse("submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)})
+        url = reverse(
+            "submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
 
         interviewee_payload = {
             "role": "INTERVIEWEE",
@@ -445,10 +677,20 @@ class PrepSessionEndpointTests(APITestCase):
             },
         }
 
-        self.client.post(url, data=json.dumps(interviewee_payload), content_type="application/json")
+        generate_url = reverse(
+            "generate_prep_session_prediction",
+            kwargs={"prep_id": str(prep_session.prep_id)},
+        )
+
+        self.client.post(
+            url, data=json.dumps(interviewee_payload), content_type="application/json"
+        )
+        self.client.post(
+            url, data=json.dumps(interviewer_payload), content_type="application/json"
+        )
         with mock.patch("api.views.run_prediction_task.delay") as mock_delay:
-            ready_response = self.client.post(url, data=json.dumps(interviewer_payload), content_type="application/json")
-        self.assertEqual(ready_response.status_code, 201)
+            ready_response = self.client.post(generate_url)
+        self.assertEqual(ready_response.status_code, 200)
         self.assertEqual(ready_response.json()["prediction"]["status"], "RUNNING")
         self.assertEqual(mock_delay.call_count, 1)
 
@@ -470,8 +712,7 @@ class PrepSessionEndpointTests(APITestCase):
         )
 
         with mock.patch("api.views.run_prediction_task.delay") as repeat_delay:
-            repeat_response = self.client.post(url, data=json.dumps(interviewer_payload), content_type="application/json")
-        self.assertEqual(ready_response.status_code, 201)
+            repeat_response = self.client.post(generate_url)
         self.assertEqual(repeat_response.status_code, 200)
         self.assertEqual(repeat_response.json()["prediction"]["status"], "COMPLETED")
         result = repeat_response.json()["prediction"]["result"]
@@ -481,17 +722,25 @@ class PrepSessionEndpointTests(APITestCase):
         self.assertEqual(mock_generate.call_count, 1)
 
     @mock.patch("api.prediction_service.generate_questions")
-    def test_get_prep_prediction_returns_completed_result_after_task_finishes(self, mock_generate):
+    def test_get_prep_prediction_returns_completed_result_after_task_finishes(
+        self, mock_generate
+    ):
         mock_generate.return_value = mock_prediction_result(
             markdown="# Async prep", marker="async"
         )
-        db_user = User.objects.create(auth0_sub="test|prep-status", email="status@example.com")
+        db_user = User.objects.create(
+            auth0_sub="test|prep-status", email="status@example.com"
+        )
         prep_session = PrepSession.objects.create(user=db_user, title="Status prep")
         self.client.force_authenticate(
             user=Auth0User({"sub": "test|prep-status", "email": "status@example.com"})
         )
-        submit_url = reverse("submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)})
-        status_url = reverse("get_prep_prediction", kwargs={"prep_id": str(prep_session.prep_id)})
+        submit_url = reverse(
+            "submit_prep_profile", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
+        status_url = reverse(
+            "get_prep_prediction", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
 
         self.client.post(
             submit_url,
@@ -505,6 +754,10 @@ class PrepSessionEndpointTests(APITestCase):
                 }
             ),
             content_type="application/json",
+        )
+        generate_url = reverse(
+            "generate_prep_session_prediction",
+            kwargs={"prep_id": str(prep_session.prep_id)},
         )
         with mock.patch("api.views.run_prediction_task.delay"):
             self.client.post(
@@ -520,6 +773,7 @@ class PrepSessionEndpointTests(APITestCase):
                 ),
                 content_type="application/json",
             )
+            self.client.post(generate_url)
 
         run_prediction_task.run(
             user_identifier="test|prep-status",
@@ -540,7 +794,9 @@ class PrepSessionEndpointTests(APITestCase):
 
         response = self.client.get(status_url)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["pipeline_status"], "READY_FOR_TOPIC_GENERATION")
+        self.assertEqual(
+            response.json()["pipeline_status"], "READY_FOR_TOPIC_GENERATION"
+        )
         self.assertEqual(response.json()["prediction"]["status"], "COMPLETED")
         result = response.json()["prediction"]["result"]
         self.assertEqual(result["markdown"], "# Async prep")
@@ -573,10 +829,12 @@ class PrepSessionEndpointTests(APITestCase):
 
     def _prediction_fingerprint(self, prep_session, db_user, user_identifier):
         profile_state = resolve_session_profile_state(prep_session, db_user)
-        interviewee, interviewer, interview_context = build_predict_payload_from_profile_state(
-            profile_state,
-            user_email=db_user.email,
-            prep_session=prep_session,
+        interviewee, interviewer, interview_context = (
+            build_predict_payload_from_profile_state(
+                profile_state,
+                user_email=db_user.email,
+                prep_session=prep_session,
+            )
         )
         return compute_fingerprint(
             user_identifier,
@@ -593,13 +851,19 @@ class PrepSessionEndpointTests(APITestCase):
             auth_sub=auth_sub,
             email="not-started@example.com",
         )
-        self.client.force_authenticate(user=Auth0User({"sub": auth_sub, "email": db_user.email}))
+        self.client.force_authenticate(
+            user=Auth0User({"sub": auth_sub, "email": db_user.email})
+        )
 
         list_url = reverse("prep_sessions")
         response = self.client.get(list_url)
 
         self.assertEqual(response.status_code, 200)
-        row = next(r for r in response.json()["results"] if r["prep_id"] == str(prep_session.prep_id))
+        row = next(
+            r
+            for r in response.json()["results"]
+            if r["prep_id"] == str(prep_session.prep_id)
+        )
         self.assertEqual(row["prediction_status"], "NOT_STARTED")
         self.assertEqual(row["row_status"], "ready_to_generate")
 
@@ -616,10 +880,16 @@ class PrepSessionEndpointTests(APITestCase):
             prep_session=prep_session,
             status=InterviewPrediction.STATUS_RUNNING,
         )
-        self.client.force_authenticate(user=Auth0User({"sub": auth_sub, "email": db_user.email}))
+        self.client.force_authenticate(
+            user=Auth0User({"sub": auth_sub, "email": db_user.email})
+        )
 
         response = self.client.get(reverse("prep_sessions"))
-        row = next(r for r in response.json()["results"] if r["prep_id"] == str(prep_session.prep_id))
+        row = next(
+            r
+            for r in response.json()["results"]
+            if r["prep_id"] == str(prep_session.prep_id)
+        )
         self.assertEqual(row["prediction_status"], "RUNNING")
         self.assertEqual(row["row_status"], "generating")
 
@@ -637,10 +907,16 @@ class PrepSessionEndpointTests(APITestCase):
             status=InterviewPrediction.STATUS_COMPLETED,
             result_json=json.dumps(mock_prediction_result(marker="ready-row")),
         )
-        self.client.force_authenticate(user=Auth0User({"sub": auth_sub, "email": db_user.email}))
+        self.client.force_authenticate(
+            user=Auth0User({"sub": auth_sub, "email": db_user.email})
+        )
 
         response = self.client.get(reverse("prep_sessions"))
-        row = next(r for r in response.json()["results"] if r["prep_id"] == str(prep_session.prep_id))
+        row = next(
+            r
+            for r in response.json()["results"]
+            if r["prep_id"] == str(prep_session.prep_id)
+        )
         self.assertEqual(row["prediction_status"], "COMPLETED")
         self.assertEqual(row["row_status"], "ready")
 
@@ -658,7 +934,9 @@ class PrepSessionEndpointTests(APITestCase):
             prep_session=prep_session,
             status=InterviewPrediction.STATUS_RUNNING,
         )
-        self.client.force_authenticate(user=Auth0User({"sub": auth_sub, "email": db_user.email}))
+        self.client.force_authenticate(
+            user=Auth0User({"sub": auth_sub, "email": db_user.email})
+        )
 
         list_url = reverse("prep_sessions")
         self.client.get(list_url)
@@ -673,9 +951,13 @@ class PrepSessionEndpointTests(APITestCase):
             auth_sub=auth_sub,
             email="prediction-readonly@example.com",
         )
-        self.client.force_authenticate(user=Auth0User({"sub": auth_sub, "email": db_user.email}))
+        self.client.force_authenticate(
+            user=Auth0User({"sub": auth_sub, "email": db_user.email})
+        )
 
-        status_url = reverse("get_prep_prediction", kwargs={"prep_id": str(prep_session.prep_id)})
+        status_url = reverse(
+            "get_prep_prediction", kwargs={"prep_id": str(prep_session.prep_id)}
+        )
         self.client.get(status_url)
         self.client.get(status_url)
 
