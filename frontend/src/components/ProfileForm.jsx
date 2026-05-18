@@ -166,8 +166,6 @@ export default function ProfileForm() {
   const [generateLoading, setGenerateLoading] = useState(false)
   const [generateError, setGenerateError] = useState(null)
 
-  const [intervieweeDecision, setIntervieweeDecision] = useState('reuse_saved')
-  const [intervieweeUploadScope, setIntervieweeUploadScope] = useState('session_only')
   const [prepIdCopied, setPrepIdCopied] = useState(false)
 
   const { getAccessTokenSilently } = useAuth0()
@@ -397,13 +395,6 @@ export default function ProfileForm() {
       : '↻ Refresh results'
 
   const selectedSession = sessionDetail || sessions.find((s) => s.prep_id === selectedPrepId)
-  const hasDefaultIntervieweeProfile = Boolean(sessionDetail?.has_default_interviewee_profile)
-
-  useEffect(() => {
-    if (!hasDefaultIntervieweeProfile) {
-      setIntervieweeDecision('upload_new')
-    }
-  }, [hasDefaultIntervieweeProfile])
 
   const copyPrepId = useCallback(async () => {
     if (!selectedPrepId) return
@@ -788,54 +779,6 @@ export default function ProfileForm() {
                       </Alert>
                     )}
                   </Form>
-                  <hr />
-                  <div className="small">
-                    <div className="fw-semibold mb-1">Interviewee profile decision for this session</div>
-                    {hasDefaultIntervieweeProfile ? (
-                      <>
-                        <Form.Check
-                          type="radio"
-                          id="decisionReuse"
-                          name="intervieweeDecision"
-                          label="Use saved profile"
-                          checked={intervieweeDecision === 'reuse_saved'}
-                          onChange={() => setIntervieweeDecision('reuse_saved')}
-                        />
-                        <Form.Check
-                          type="radio"
-                          id="decisionUpload"
-                          name="intervieweeDecision"
-                          label="Upload new profile"
-                          checked={intervieweeDecision === 'upload_new'}
-                          onChange={() => setIntervieweeDecision('upload_new')}
-                        />
-                      </>
-                    ) : (
-                      <Alert variant="secondary" className="py-2 mb-2">
-                        No default interviewee profile found yet. Upload a new interviewee profile from the extension.
-                      </Alert>
-                    )}
-                    {intervieweeDecision === 'upload_new' && (
-                      <div className="ms-3 mt-2">
-                        <Form.Check
-                          type="radio"
-                          id="scopeSessionOnly"
-                          name="intervieweeUploadScope"
-                          label="Use only for this session"
-                          checked={intervieweeUploadScope === 'session_only'}
-                          onChange={() => setIntervieweeUploadScope('session_only')}
-                        />
-                        <Form.Check
-                          type="radio"
-                          id="scopeSaveDefault"
-                          name="intervieweeUploadScope"
-                          label="Save as default profile"
-                          checked={intervieweeUploadScope === 'save_as_default'}
-                          onChange={() => setIntervieweeUploadScope('save_as_default')}
-                        />
-                      </div>
-                    )}
-                  </div>
                   <hr />
                   <div className="small">
                     <div className="fw-semibold mb-2">Use browser extension for profile upload</div>
