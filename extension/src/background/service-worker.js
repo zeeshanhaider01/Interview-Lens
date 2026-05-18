@@ -1,7 +1,9 @@
 import {
   createPrepSession,
+  generatePrepSession,
   getIntervieweeBaselineProfile,
   getPrepSessionDetail,
+  getPrepSessionRoleProfile,
   submitPrepProfile,
   upsertIntervieweeBaselineProfile,
 } from "../lib/api-client.js";
@@ -63,6 +65,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return submitPrepProfile(message.prepId, message.payload);
       case "GET_PREP_SESSION_DETAIL":
         return getPrepSessionDetail(message.prepId);
+      case "GET_PREP_SESSION_ROLE_PROFILE":
+        return getPrepSessionRoleProfile(message.prepId, message.role);
+      case "GENERATE_PREP_SESSION":
+        return generatePrepSession(message.prepId);
       case "GET_INTERVIEWEE_BASELINE_PROFILE":
         return getIntervieweeBaselineProfile();
       case "UPSERT_INTERVIEWEE_BASELINE_PROFILE":
