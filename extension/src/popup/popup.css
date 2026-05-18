@@ -76,6 +76,15 @@ body {
   grid-column: span 2;
 }
 
+.captureNavRow {
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+
+.captureNavRow .btnOutline {
+  width: 100%;
+}
+
 .brandSubheading {
   margin: 4px 0 0;
   font-size: var(--font-size-xs);

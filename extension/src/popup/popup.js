@@ -7,7 +7,13 @@ import {
   storageSet,
 } from "../lib/browser-api.js";
 import { getSettings } from "../lib/config.js";
-import { PROFILE_ROLES, SECTION_KEYS, STORAGE_KEYS } from "../lib/constants.js";
+import {
+  CAPTURE_BADGE_KINDS,
+  CAPTURE_VIEW_MODES,
+  PROFILE_ROLES,
+  SECTION_KEYS,
+  STORAGE_KEYS,
+} from "../lib/constants.js";
 import { normalizeCapture } from "../lib/normalizer.js";
 import { estimateProfileSize } from "../lib/profile-size.js";
 
@@ -46,6 +52,10 @@ const ui = {
   prepValidationLabel: document.getElementById("prepValidationLabel"),
   activePrepBadge: document.getElementById("activePrepBadge"),
   activePrepBadgeValue: document.getElementById("activePrepBadgeValue"),
+  sectionAControls: document.getElementById("sectionAControls"),
+  sectionBControls: document.getElementById("sectionBControls"),
+  nextToSectionBButton: document.getElementById("nextToSectionBButton"),
+  uploadDefaultProfileButton: document.getElementById("uploadDefaultProfileButton"),
   roleInterviewee: document.getElementById("roleInterviewee"),
   roleInterviewer: document.getElementById("roleInterviewer"),
   intervieweeDecisionSection: document.getElementById("intervieweeDecisionSection"),
@@ -86,6 +96,8 @@ let currentSettings = {};
 let isAuthFlowPending = false;
 let isPrepValidationPending = false;
 let activePrepId = "";
+let currentCaptureViewMode = CAPTURE_VIEW_MODES.PREP_SESSION;
+let lastCaptureSourceUrl = "";
 let lastProfileSizeEstimate = null;
 let profileSizeUpdateTimer = null;
 const POPUP_LOCAL_DRAFT_KEY = "popup_draft_local_backup";
@@ -134,9 +146,109 @@ function setCapturedProfileBadge(role) {
     ui.capturedProfileBadge.classList.add("hidden");
     return;
   }
-  const label = role === PROFILE_ROLES.INTERVIEWER ? "Interviewer" : "Interviewee";
-  ui.capturedProfileBadge.textContent = `Captured: ${label} profile successfully`;
+  let label = "Interviewee";
+  if (role === CAPTURE_BADGE_KINDS.DEFAULT_PROFILE) {
+    label = "Default profile";
+  } else if (role === PROFILE_ROLES.INTERVIEWER) {
+    label = "Interviewer";
+  }
+  ui.capturedProfileBadge.textContent = `Captured: ${label} successfully`;
   ui.capturedProfileBadge.classList.remove("hidden");
+}
+
+function isSectionA() {
+  return currentCaptureViewMode === CAPTURE_VIEW_MODES.DEFAULT_PROFILE;
+}
+
+function isSectionB() {
+  return currentCaptureViewMode === CAPTURE_VIEW_MODES.PREP_SESSION;
+}
+
+function sectionsHaveContent(sections = readEditedSections()) {
+  return SECTION_KEYS.some((key) => (sections[key] ?? []).length > 0);
+}
+
+function updateNextButtonVisibility() {
+  const showNext =
+    isSectionA() && (hasDefaultIntervieweeProfile || sectionsHaveContent());
+  ui.nextToSectionBButton.classList.toggle("hidden", !showNext);
+}
+
+function setCaptureViewMode(mode, options = {}) {
+  const { persistDraft = true } = options;
+  if (!Object.values(CAPTURE_VIEW_MODES).includes(mode)) {
+    return;
+  }
+  currentCaptureViewMode = mode;
+  const showSectionA = isSectionA();
+  ui.sectionAControls.classList.toggle("hidden", !showSectionA);
+  ui.sectionBControls.classList.toggle("hidden", showSectionA);
+  updateNextButtonVisibility();
+  if (showSectionA) {
+    updateIntervieweeDecisionUi();
+  } else {
+    updateIntervieweeDecisionUi();
+    if (
+      getRoleValue() === PROFILE_ROLES.INTERVIEWEE &&
+      getIntervieweeChoice() === INTERVIEWEE_PROFILE_CHOICES.REUSE_SAVED &&
+      hasDefaultIntervieweeProfile &&
+      !sectionsHaveContent()
+    ) {
+      loadDefaultProfileIntoForm({ silent: true }).catch(() => {
+        // Best-effort preload when entering Section B with reuse selected.
+      });
+    }
+  }
+  updateProfileSizePanel();
+  applyActionAvailability();
+  if (persistDraft) {
+    persistPopupDraft().catch(() => {
+      // Best-effort draft persistence.
+    });
+  }
+}
+
+function goToSectionA() {
+  setCaptureViewMode(CAPTURE_VIEW_MODES.DEFAULT_PROFILE);
+  setStatus("Upload or update your default interviewee profile.");
+}
+
+function goToSectionB(options = {}) {
+  const { selectInterviewee = false } = options;
+  if (selectInterviewee) {
+    setRoleValue(PROFILE_ROLES.INTERVIEWEE);
+  }
+  setCaptureViewMode(CAPTURE_VIEW_MODES.PREP_SESSION);
+  setStatus("Prep session profile mode. Add a prep session before submitting session profiles.");
+}
+
+async function loadDefaultProfileIntoForm(options = {}) {
+  const { silent = false } = options;
+  const baseline = await withRuntimeMessage({ type: "GET_INTERVIEWEE_BASELINE_PROFILE" });
+  if (!baseline?.exists || !baseline?.profile) {
+    throw new Error("No default interviewee profile found. Upload a new interviewee profile first.");
+  }
+  const profile = baseline.profile;
+  writeSections(profile.extracted_sections ?? {});
+  ui.profileNameField.value = profile.metadata?.profile_name ?? "";
+  lastCaptureSourceUrl = profile.source_url ?? lastCaptureSourceUrl;
+  setCapturedProfileBadge(CAPTURE_BADGE_KINDS.DEFAULT_PROFILE);
+  if (!silent) {
+    setStatus("Loaded saved default profile. Review and edit before submit.");
+  }
+  await persistPopupDraft();
+}
+
+async function resolveSourceUrlForSubmit() {
+  if (lastCaptureSourceUrl) {
+    return lastCaptureSourceUrl;
+  }
+  try {
+    const activeTab = await getCurrentLinkedInTab();
+    return activeTab.url;
+  } catch (_error) {
+    return "";
+  }
 }
 
 function getRoleValue() {
@@ -318,11 +430,13 @@ function summarizeCapture(normalizedCapture) {
 function buildPopupDraft() {
   return {
     prepId: ui.prepIdInput.value.trim(),
+    captureViewMode: currentCaptureViewMode,
     role: getRoleValue(),
     intervieweeChoice: getIntervieweeChoice(),
     uploadScope: getIntervieweeUploadScope(),
     profileName: ui.profileNameField.value.trim(),
     sections: readEditedSections(),
+    lastCaptureSourceUrl,
     updatedAt: Date.now(),
   };
 }
@@ -399,11 +513,14 @@ function shouldShowProfileSizePanel() {
   if (!isAuthenticated) {
     return false;
   }
+  if (isSectionA()) {
+    return true;
+  }
   if (
     getRoleValue() === PROFILE_ROLES.INTERVIEWEE &&
     getIntervieweeChoice() === INTERVIEWEE_PROFILE_CHOICES.REUSE_SAVED
   ) {
-    return false;
+    return sectionsHaveContent();
   }
   return true;
 }
@@ -476,7 +593,19 @@ function applyActionAvailability() {
   ui.logoutButton.disabled = isAuthFlowPending || !isAuthenticated;
   ui.createPrepSessionButton.disabled = isAuthFlowPending || !isAuthenticated;
   const profileBlocked = Boolean(lastProfileSizeEstimate && !lastProfileSizeEstimate.submitAllowed);
-  ui.submitButton.disabled = isAuthFlowPending || !isAuthenticated || profileBlocked;
+  const sectionBSubmitBlocked =
+    isSectionB() &&
+    getRoleValue() === PROFILE_ROLES.INTERVIEWEE &&
+    getIntervieweeChoice() === INTERVIEWEE_PROFILE_CHOICES.REUSE_SAVED &&
+    !sectionsHaveContent() &&
+    !hasDefaultIntervieweeProfile;
+  const missingPrepForSession = isSectionB() && !ui.prepIdInput.value.trim();
+  ui.submitButton.disabled =
+    isAuthFlowPending ||
+    !isAuthenticated ||
+    profileBlocked ||
+    sectionBSubmitBlocked ||
+    missingPrepForSession;
   ui.captureButton.disabled = isAuthFlowPending;
   updatePrepActionButtonsVisibility();
 }
@@ -557,6 +686,8 @@ function getIntervieweeUploadScope() {
 
 function updateIntervieweeDecisionUi() {
   const isInterviewee = getRoleValue() === PROFILE_ROLES.INTERVIEWEE;
+  const showUploadDefaultButton = isSectionB() && isInterviewee;
+  ui.uploadDefaultProfileButton.classList.toggle("hidden", !showUploadDefaultButton);
   ui.intervieweeDecisionSection.classList.toggle("hidden", !isInterviewee);
   const choice = getIntervieweeChoice();
   ui.intervieweeUploadScopeSection.classList.toggle(
@@ -605,6 +736,7 @@ function writeSections(sections = {}) {
   }
   autoResizeAllTextareas();
   updateProfileSizePanel(sections);
+  updateNextButtonVisibility();
 }
 
 function resetPopupFormAfterLogout() {
@@ -618,8 +750,10 @@ function resetPopupFormAfterLogout() {
   ui.uploadScopeDefault.checked = false;
   ui.profileNameField.value = "";
   writeSections({});
+  lastCaptureSourceUrl = "";
   lastProfileSizeEstimate = null;
   ui.profileSizeSection.classList.add("hidden");
+  setCaptureViewMode(CAPTURE_VIEW_MODES.DEFAULT_PROFILE, { persistDraft: false });
   clearLocalPopupDraft();
 }
 
@@ -662,6 +796,122 @@ async function refreshIntervieweeDecisionState() {
     }
   }
   updateIntervieweeDecisionUi();
+  updateNextButtonVisibility();
+}
+
+async function submitDefaultProfile() {
+  const sections = readEditedSections();
+  if (!sectionsHaveContent(sections)) {
+    throw new Error("Capture or enter profile data before saving your default profile.");
+  }
+  const sizeEstimate = estimateProfileSize(sections);
+  if (!sizeEstimate.submitAllowed) {
+    throw new Error(sizeEstimate.hint);
+  }
+  const sourceUrl = await resolveSourceUrlForSubmit();
+  await withRuntimeMessage({
+    type: "UPSERT_INTERVIEWEE_BASELINE_PROFILE",
+    payload: {
+      source: "LINKEDIN",
+      source_url: sourceUrl || undefined,
+      extracted_sections: sections,
+      confidence_flags: {
+        edited_by_user: true,
+      },
+      metadata: {
+        submitted_from: "chrome_extension",
+        profile_name: ui.profileNameField.value.trim(),
+        scope: "default_profile",
+      },
+    },
+  });
+  hasDefaultIntervieweeProfile = true;
+  await refreshIntervieweeDecisionState();
+  updateNextButtonVisibility();
+  setStatus("Default profile saved. Click Next to continue with prep session profiles.");
+}
+
+async function submitPrepSessionProfile() {
+  const prepId = ui.prepIdInput.value.trim();
+  if (!prepId) {
+    throw new Error("Add or create a prep session before submitting a profile.");
+  }
+  const role = getRoleValue();
+  if (!Object.values(PROFILE_ROLES).includes(role)) {
+    throw new Error("Select a valid profile role.");
+  }
+
+  let uploadScope = INTERVIEWEE_UPLOAD_SCOPES.SESSION_ONLY;
+  if (role === PROFILE_ROLES.INTERVIEWEE) {
+    const choice = getIntervieweeChoice();
+    if (choice === INTERVIEWEE_PROFILE_CHOICES.REUSE_SAVED) {
+      if (!hasDefaultIntervieweeProfile) {
+        throw new Error("No default interviewee profile found. Upload a new interviewee profile first.");
+      }
+      if (!sectionsHaveContent()) {
+        await loadDefaultProfileIntoForm({ silent: true });
+      }
+    } else {
+      uploadScope = getIntervieweeUploadScope();
+    }
+  }
+
+  const sizeEstimate = estimateProfileSize(readEditedSections());
+  if (!sizeEstimate.submitAllowed) {
+    throw new Error(sizeEstimate.hint);
+  }
+
+  await persistActivePrepId(prepId);
+  setActivePrepBadge(prepId);
+
+  const sourceUrl = await resolveSourceUrlForSubmit();
+  const payload = {
+    role,
+    source: "LINKEDIN",
+    source_url: sourceUrl || undefined,
+    extracted_sections: readEditedSections(),
+    confidence_flags: {
+      edited_by_user: true,
+    },
+    metadata: {
+      submitted_from: "chrome_extension",
+      profile_name: ui.profileNameField.value.trim(),
+    },
+  };
+
+  if (role === PROFILE_ROLES.INTERVIEWEE && uploadScope === INTERVIEWEE_UPLOAD_SCOPES.SAVE_AS_DEFAULT) {
+    await withRuntimeMessage({
+      type: "UPSERT_INTERVIEWEE_BASELINE_PROFILE",
+      payload: {
+        source: payload.source,
+        source_url: payload.source_url,
+        extracted_sections: payload.extracted_sections,
+        confidence_flags: payload.confidence_flags,
+        metadata: {
+          ...payload.metadata,
+          scope: INTERVIEWEE_UPLOAD_SCOPES.SAVE_AS_DEFAULT,
+        },
+      },
+    });
+  }
+
+  const data = await withRuntimeMessage({
+    type: "SUBMIT_PROFILE",
+    prepId,
+    payload,
+  });
+  const dashboardUrl =
+    (data.dashboard_url ?? "").trim() || buildDashboardUrl(currentSettings.dashboardUrl, prepId);
+  setDashboardCtaUrl(dashboardUrl);
+
+  const sessionMessage =
+    data.user_message || `Submitted successfully. Current status: ${data.pipeline_status}`;
+  if (role === PROFILE_ROLES.INTERVIEWEE && uploadScope === INTERVIEWEE_UPLOAD_SCOPES.SAVE_AS_DEFAULT) {
+    setStatus(`Default profile saved. ${sessionMessage}`);
+  } else {
+    setStatus(sessionMessage);
+  }
+  await refreshIntervieweeDecisionState();
 }
 
 async function loadInitialState() {
@@ -732,7 +982,19 @@ async function loadInitialState() {
   if (cached?.payload) {
     setCapturedProfileBadge(cached.role);
   }
+  lastCaptureSourceUrl = String(draft?.lastCaptureSourceUrl ?? cached?.payload?.source_url ?? "").trim();
   await refreshIntervieweeDecisionState();
+  const draftViewMode = draft?.captureViewMode;
+  if (Object.values(CAPTURE_VIEW_MODES).includes(draftViewMode)) {
+    setCaptureViewMode(draftViewMode, { persistDraft: false });
+  } else {
+    setCaptureViewMode(
+      hasDefaultIntervieweeProfile
+        ? CAPTURE_VIEW_MODES.PREP_SESSION
+        : CAPTURE_VIEW_MODES.DEFAULT_PROFILE,
+      { persistDraft: false }
+    );
+  }
   updateProfileSizePanel();
 }
 
@@ -796,7 +1058,8 @@ ui.createPrepSessionButton.addEventListener("click", async () => {
     setDashboardCtaUrl(buildDashboardUrl(currentSettings.dashboardUrl, data.prep_id));
     setActivePrepBadge(data.prep_id);
     await refreshIntervieweeDecisionState();
-    setStatus("New prep session created.");
+    goToSectionB();
+    setStatus("New prep session created. Submit interviewee and interviewer profiles for this session.");
   } catch (error) {
     setStatus(readErrorMessage(error), true);
   }
@@ -822,6 +1085,7 @@ ui.addPrepSessionButton.addEventListener("click", async () => {
     setActivePrepBadge(prepId);
     await persistPopupDraft();
     await refreshIntervieweeDecisionState();
+    goToSectionB();
     setStatus("Preparation ID validated and added successfully.");
   } catch (error) {
     setStatus(
@@ -878,6 +1142,7 @@ ui.captureButton.addEventListener("click", async () => {
   }, 600);
   try {
     if (
+      isSectionB() &&
       getRoleValue() === PROFILE_ROLES.INTERVIEWEE &&
       getIntervieweeChoice() === INTERVIEWEE_PROFILE_CHOICES.REUSE_SAVED
     ) {
@@ -896,13 +1161,16 @@ ui.captureButton.addEventListener("click", async () => {
     const normalized = normalizeCapture(response.data);
     writeSections(normalized.extracted_sections);
     ui.profileNameField.value = normalized.metadata?.profile_name ?? "";
-    setCapturedProfileBadge(getRoleValue());
+    lastCaptureSourceUrl = activeTab.url;
+    const captureRole = isSectionA() ? CAPTURE_BADGE_KINDS.DEFAULT_PROFILE : getRoleValue();
+    setCapturedProfileBadge(captureRole);
     setCaptureSummary(summarizeCapture(normalized));
+    updateNextButtonVisibility();
     await withRuntimeMessage({
       type: "SAVE_LAST_CAPTURE",
       payload: {
         prepId: ui.prepIdInput.value.trim(),
-        role: getRoleValue(),
+        role: captureRole,
         payload: normalized,
       },
     });
@@ -922,88 +1190,25 @@ ui.submitButton.addEventListener("click", async () => {
     if (!isAuthenticated) {
       throw new Error("Login required before submit.");
     }
-    const prepId = ui.prepIdInput.value.trim();
-    const role = getRoleValue();
-    if (!prepId) {
-      throw new Error("prep_id is required before submit.");
+    if (isSectionA()) {
+      await submitDefaultProfile();
+      return;
     }
-    const sizeEstimate = estimateProfileSize(readEditedSections());
-    if (!sizeEstimate.submitAllowed) {
-      throw new Error(sizeEstimate.hint);
-    }
-    await persistActivePrepId(prepId);
-    setActivePrepBadge(prepId);
-    if (!Object.values(PROFILE_ROLES).includes(role)) {
-      throw new Error("Select a valid profile role.");
-    }
-
-    let uploadScope = INTERVIEWEE_UPLOAD_SCOPES.SESSION_ONLY;
-    if (role === PROFILE_ROLES.INTERVIEWEE) {
-      const choice = getIntervieweeChoice();
-      if (choice === INTERVIEWEE_PROFILE_CHOICES.REUSE_SAVED) {
-        if (!hasDefaultIntervieweeProfile) {
-          throw new Error("No default interviewee profile found. Upload a new interviewee profile first.");
-        }
-        setDashboardCtaUrl(buildDashboardUrl(currentSettings.dashboardUrl, prepId));
-        setStatus(
-          "Using saved default interviewee profile. Submit interviewer profile to continue this prep session."
-        );
-        return;
-      }
-      uploadScope = getIntervieweeUploadScope();
-    }
-
-    const activeTab = await getCurrentLinkedInTab();
-    const payload = {
-      role,
-      source: "LINKEDIN",
-      source_url: activeTab.url,
-      extracted_sections: readEditedSections(),
-      confidence_flags: {
-        edited_by_user: true,
-      },
-      metadata: {
-        submitted_from: "chrome_extension",
-        profile_name: ui.profileNameField.value.trim(),
-      },
-    };
-
-    if (role === PROFILE_ROLES.INTERVIEWEE) {
-      if (uploadScope === INTERVIEWEE_UPLOAD_SCOPES.SAVE_AS_DEFAULT) {
-        await withRuntimeMessage({
-          type: "UPSERT_INTERVIEWEE_BASELINE_PROFILE",
-          payload: {
-            source: "LINKEDIN",
-            source_url: activeTab.url,
-            extracted_sections: payload.extracted_sections,
-            confidence_flags: payload.confidence_flags,
-            metadata: {
-              ...payload.metadata,
-              scope: INTERVIEWEE_UPLOAD_SCOPES.SAVE_AS_DEFAULT,
-            },
-          },
-        });
-      }
-    }
-
-    const data = await withRuntimeMessage({
-      type: "SUBMIT_PROFILE",
-      prepId,
-      payload,
-    });
-    const dashboardUrl =
-      (data.dashboard_url ?? "").trim() || buildDashboardUrl(currentSettings.dashboardUrl, prepId);
-    setDashboardCtaUrl(dashboardUrl);
-    setStatus(
-      role === PROFILE_ROLES.INTERVIEWEE && uploadScope === INTERVIEWEE_UPLOAD_SCOPES.SAVE_AS_DEFAULT
-        ? "Interviewee profile submitted and saved as default."
-        : data.user_message || `Submitted successfully. Current status: ${data.pipeline_status}`
-    );
-    await refreshIntervieweeDecisionState();
+    await submitPrepSessionProfile();
   } catch (error) {
-    setDashboardCtaUrl("");
+    if (isSectionB()) {
+      setDashboardCtaUrl("");
+    }
     setStatus(error.message, true);
   }
+});
+
+ui.nextToSectionBButton.addEventListener("click", () => {
+  goToSectionB({ selectInterviewee: true });
+});
+
+ui.uploadDefaultProfileButton.addEventListener("click", () => {
+  goToSectionA();
 });
 
 [ui.roleInterviewee, ui.roleInterviewer].forEach((radio) => {
@@ -1021,7 +1226,13 @@ ui.submitButton.addEventListener("click", async () => {
 
 ui.intervieweeChoiceReuse.addEventListener("change", () => {
   updateIntervieweeDecisionUi();
-  updateProfileSizePanel();
+  if (getIntervieweeChoice() === INTERVIEWEE_PROFILE_CHOICES.REUSE_SAVED && hasDefaultIntervieweeProfile) {
+    loadDefaultProfileIntoForm().catch((error) => {
+      setStatus(readErrorMessage(error), true);
+    });
+  } else {
+    updateProfileSizePanel();
+  }
   persistPopupDraft().catch(() => {
     // Best-effort draft persistence.
   });

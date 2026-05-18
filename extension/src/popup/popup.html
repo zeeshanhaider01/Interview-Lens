@@ -90,7 +90,20 @@
 
       <section id="captureProfileSection">
         <h2>Capture LinkedIn Profile</h2>
-        <div role="group" aria-label="Profile role">
+        <div id="sectionAControls" class="captureViewSection">
+          <div role="group" aria-label="Default profile mode">
+            <label class="radioLabel">
+              <input id="defaultProfileModeRadio" type="radio" name="captureViewMode" checked disabled />
+              Default Profile
+            </label>
+          </div>
+          <p class="hintText">Capture and submit your default interviewee profile for reuse across prep sessions.</p>
+          <div class="row captureNavRow">
+            <button id="nextToSectionBButton" type="button" class="btnOutline hidden">Next</button>
+          </div>
+        </div>
+        <div id="sectionBControls" class="captureViewSection hidden">
+          <div role="group" aria-label="Profile role">
           <label class="radioLabel">
             <input id="roleInterviewee" name="roleSelect" type="radio" value="INTERVIEWEE" checked />
             Interviewee
@@ -122,6 +135,10 @@
               <input id="uploadScopeDefault" name="intervieweeUploadScope" type="radio" value="save_as_default" />
               Save as default profile
             </label>
+          </div>
+          </div>
+          <div class="row captureNavRow">
+            <button id="uploadDefaultProfileButton" type="button" class="btnOutline">Upload default profile</button>
           </div>
         </div>
         <button id="captureButton" type="button" class="btnPrimary">Capture Current LinkedIn Page</button>
