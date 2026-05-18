@@ -108,11 +108,11 @@ let lastProfileSizeEstimate = null;
 let profileSizeUpdateTimer = null;
 const POPUP_LOCAL_DRAFT_KEY = "popup_draft_local_backup";
 const DEFAULT_ACCESSIBILITY_PREFS = {
-  viewMode: "compact",
-  fontScale: "100",
+  viewMode: "large",
+  fontScale: "130",
   relativeSizing: "off",
-  popupWidth: "420",
-  popupHeight: "620",
+  popupWidth: "760",
+  popupHeight: "600",
 };
 const RELATIVE_SIZE_RATIO_BY_VIEW = {
   compact: { width: 0.32, height: 0.72 },
