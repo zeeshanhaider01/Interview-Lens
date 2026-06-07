@@ -9,6 +9,7 @@ export default function Header() {
   return (
     <Navbar bg="primary" data-bs-theme="dark" expand="lg" className="shadow-sm">
       <Container>
+        <Navbar.Brand className="fw-bold text-white">InterviewerLens</Navbar.Brand>
         <Nav className="ms-auto">
           {!isAuthenticated ? (
             <Button variant="light" onClick={() => loginWithRedirect()}>
