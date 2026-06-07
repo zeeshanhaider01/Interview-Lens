@@ -33,12 +33,6 @@ export default function LandingPage() {
       <Container className="py-5 py-lg-6">
         <Row className="align-items-center g-4 g-lg-5">
           <Col lg={6}>
-            <span
-              className="d-inline-block border rounded-pill px-3 py-1 small text-secondary bg-white mb-3"
-            >
-              Profile-grounded prep · Not generic question banks
-            </span>
-
             <h1 className="display-5 fw-bold mb-3">
               <span className="text-primary">Walk in knowing</span>{' '}
               <span className="text-dark">what your interviewer is likely to focus on</span>

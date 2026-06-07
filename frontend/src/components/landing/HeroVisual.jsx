@@ -86,10 +86,6 @@ export default function HeroVisual() {
               </div>
             </Card.Body>
           </Card>
-
-          <div className="text-center text-muted mt-3" style={{ fontSize: '0.75rem' }}>
-            Grounded in both profiles · Role-aware
-          </div>
         </Card.Body>
       </Card>
     </div>
