@@ -14,14 +14,23 @@ const STEPS = [
   },
   {
     title: 'Get your topic map',
-    body: 'Generate a prioritized list of likely focus areas with likelihood scores and study anchors.',
+    body: 'Generate prioritized focus areas with likelihood scores, review pointers, and session prep priorities.',
   },
 ]
 
 const DIFFERENTIATORS = [
-  'Both profiles, not just a job description',
-  'Likelihood-ranked topics (HIGH / MEDIUM / LOWER)',
-  'Study anchors to focus your prep time',
+  {
+    title: 'Built around your interviewer',
+    body: 'We analyze both LinkedIn profiles — yours and theirs — not just a job description.',
+  },
+  {
+    title: 'See what matters most',
+    body: 'Topics ranked HIGH, MEDIUM, or LOWER so you prep the areas most likely to come up first.',
+  },
+  {
+    title: 'More than topic names',
+    body: 'Each topic shows why it matters and a few things to revisit, plus overall prep priorities for the session.',
+  },
 ]
 
 export default function LandingPage() {
@@ -41,7 +50,7 @@ export default function LandingPage() {
             <p className="lead text-secondary mb-4" style={{ fontSize: '1.05rem' }}>
               InterviewerLens uses our Chrome extension to capture both LinkedIn profiles—yours and
               theirs—then builds a prioritized <strong>topic map</strong> with likelihood scores
-              (HIGH / MEDIUM / LOWER) and study anchors. Add your target role and company for
+              (HIGH / MEDIUM / LOWER) and review pointers for each topic. Add your target role and company for
               sharper results.
             </p>
 
@@ -98,16 +107,17 @@ export default function LandingPage() {
       </Container>
 
       <Container className="pb-5">
-        <div className="border rounded-3 bg-white p-4 shadow-sm">
-          <h2 className="h5 text-primary fw-bold mb-3">Why InterviewerLens</h2>
-          <ul className="mb-0 ps-3">
-            {DIFFERENTIATORS.map((item) => (
-              <li key={item} className="text-secondary mb-1">
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <h2 className="h4 text-primary fw-bold mb-4">Prep smarter, not longer</h2>
+        <Row className="g-3">
+          {DIFFERENTIATORS.map((item) => (
+            <Col md={4} key={item.title}>
+              <div className="h-100 border rounded-3 bg-white p-3 shadow-sm">
+                <h3 className="h6 fw-semibold mb-2">{item.title}</h3>
+                <p className="small text-secondary mb-0">{item.body}</p>
+              </div>
+            </Col>
+          ))}
+        </Row>
       </Container>
 
       <Container className="pb-5 text-center">
